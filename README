@@ -1,0 +1,27 @@
+This program has been adapted from the var_coeff program written by Dhairya Malhotra.
+
+
+COMPILING
+---------
+Require: PETSc, PvFMM
+PETSC_DIR and PVFMM_DIR must be defined.
+PvFMM can be downloaded from: https://github.com/dmalhotra/pvfmm
+
+To compile:
+> make
+
+Troubleshooting:
+Modify Makefile as needed.
+
+
+COMMANDLINE OPTIONS
+-------------------
+-eta        <Real>   Inf norm of \rho
+-ref_tol    <Real>   Tree refinement tolerance
+-min_depth  <Int>    Minimum tree depth
+-max_depth  <Int>    Maximum tree depth
+-fmm_q      <Int>    Chebyshev polynomial degree
+-fmm_m      <Int>    Multipole order (+ve even integer)
+-gmres_tol  <Real>   GMRES residual tolerance
+-gmres_iter <Int>    GMRES maximum iterations
+

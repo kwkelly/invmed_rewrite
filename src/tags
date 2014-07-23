@@ -1,0 +1,48 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.6	//
+CHEB_DEG	helm.cpp	/^PetscInt  CHEB_DEG  =14;       \/\/ Fine mesh Cheb. order$/;"	v
+FMMCreateShell	helm.cpp	/^int FMMCreateShell(FMMData *fmm_data, Mat *A){$/;"	f
+FMMData	helm.cpp	/^struct FMMData{$/;"	s	file:
+FMMDestroy	helm.cpp	/^int FMMDestroy(FMMData *fmm_data){$/;"	f
+FMMNode_t	helm.cpp	/^typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;$/;"	t	file:
+FMM_Init	helm.cpp	/^int FMM_Init(MPI_Comm& comm, FMMData *fmm_data){$/;"	f
+FMM_Mat_t	helm.cpp	/^typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;$/;"	t	file:
+FMM_Tree_t	helm.cpp	/^typedef pvfmm::FMM_Tree<FMM_Mat_t> FMM_Tree_t;$/;"	t	file:
+GMRES_TOL	helm.cpp	/^PetscReal GMRES_TOL  =1e-6;    \/\/ Fine mesh GMRES tolerance$/;"	v
+INPUT_DOF	helm.cpp	/^PetscInt  INPUT_DOF=2;$/;"	v
+M	helm.cpp	/^  PetscInt m,n,M,N;$/;"	m	struct:FMMData	file:
+MAXDEPTH	helm.cpp	/^PetscInt  MAXDEPTH  =MAX_DEPTH;\/\/ Maximum tree depth$/;"	v
+MAX_ITER	helm.cpp	/^PetscInt MAX_ITER  =200;$/;"	v
+MINDEPTH	helm.cpp	/^PetscInt  MINDEPTH   =4;       \/\/ Minimum tree depth$/;"	v
+MUL_ORDER	helm.cpp	/^PetscInt MUL_ORDER  =10;       \/\/ Fine mesh mult  order$/;"	v
+N	helm.cpp	/^  PetscInt m,n,M,N;$/;"	m	struct:FMMData	file:
+PERIODIC	helm.cpp	/^PetscBool  PERIODIC=PETSC_FALSE;$/;"	v
+SCAL_EXP	helm.cpp	/^PetscReal  SCAL_EXP=1.0;$/;"	v
+TOL	helm.cpp	/^PetscReal       TOL  =1e-3;    \/\/ Tolerance$/;"	v
+TREE_ONLY	helm.cpp	/^PetscBool TREE_ONLY=PETSC_FALSE;$/;"	v
+VTK_ORDER	helm.cpp	/^PetscInt  VTK_ORDER=0;$/;"	v
+bndry	helm.cpp	/^  pvfmm::BoundaryType bndry;$/;"	m	struct:FMMData	file:
+f_max	helm.cpp	/^PetscReal f_max=1;$/;"	v
+fmm_mat	helm.cpp	/^  FMM_Mat_t* fmm_mat;$/;"	m	struct:FMMData	file:
+fn_input	helm.cpp	/^void fn_input(double* coord, int n, double* out){ \/\/Input function$/;"	f
+help	helm.cpp	/^static char help[] = "\\n\\$/;"	v	file:
+iter_ksp	helm.cpp	/^int    iter_ksp;$/;"	v
+kernel	helm.cpp	/^  const pvfmm::Kernel<double>* kernel;$/;"	m	struct:FMMData	file:
+m	helm.cpp	/^  PetscInt m,n,M,N;$/;"	m	struct:FMMData	file:
+main	helm.cpp	/^int main(int argc,char **args){$/;"	f
+mult	helm.cpp	/^int mult(Mat M, Vec U, Vec Y){$/;"	f
+n	helm.cpp	/^  PetscInt m,n,M,N;$/;"	m	struct:FMMData	file:
+num_oct	helm.cpp	/^size_t num_oct;$/;"	v
+rho	helm.cpp	/^  std::vector<double> rho;$/;"	m	struct:FMMData	file:
+rho	helm.cpp	/^void rho(double* coord, int n, double* out){ \/\/Input function$/;"	f
+rho_	helm.cpp	/^PetscReal rho_=1000000;$/;"	v
+time_ksp	helm.cpp	/^double time_ksp;$/;"	v
+tree	helm.cpp	/^  FMM_Tree_t* tree;$/;"	m	struct:FMMData	file:
+tree2vec	helm.cpp	/^int tree2vec(FMMData fmm_data, Vec& Y){$/;"	f
+u_ref	helm.cpp	/^  std::vector<double> u_ref;$/;"	m	struct:FMMData	file:
+u_ref	helm.cpp	/^void u_ref(double* coord, int n, double* out){ \/\/Analytical solution$/;"	f
+vec2tree	helm.cpp	/^int vec2tree(Vec& Y, FMMData fmm_data){$/;"	f

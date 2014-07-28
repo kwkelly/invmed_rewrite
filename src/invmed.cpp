@@ -46,6 +46,8 @@ PetscReal eta_=1;
 
 
 // Medium perterbation, centered at center with a radius of .01, value of input eta_
+#undef __FUNCT__
+#define __FUNCT__ "eta"
 void eta(double* coord, int n, double* out){ 
   for(int i=0;i<n;i++){
     double* c=&coord[i*COORD_DIM];
@@ -56,6 +58,9 @@ void eta(double* coord, int n, double* out){
   }
 }
 //Input function, in this case approximate point source centered at the point in in r_2
+
+#undef __FUNCT__
+#define __FUNCT__ "fn_input"
 void fn_input(double* coord, int n, double* out){ 
   int dof=INPUT_DOF;
   double L=500;
@@ -76,6 +81,8 @@ void fn_input(double* coord, int n, double* out){
   }
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "u_ref"
 void u_ref(double* coord, int n, double* out){ //Analytical solution
   int dof=INPUT_DOF;
   for(int i=0;i<n;i++){
@@ -107,6 +114,8 @@ int ptwise_coeff_mult(Vec &X, FMMData *fmm_data);
 
 int eval_function_at_nodes(FMMData *fmm_data, void (*func)(double* coord, int n, double* out), std::vector<double> &func_vec);
 
+#undef __FUNCT__
+#define __FUNCT__ "tree2vec"
 int tree2vec(FMMData fmm_data, Vec& Y){
   PetscErrorCode ierr;
   FMM_Tree_t* tree=fmm_data.tree;
@@ -152,6 +161,8 @@ int tree2vec(FMMData fmm_data, Vec& Y){
   return 0;
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "vec2tree"
 int vec2tree(Vec& Y, FMMData fmm_data){
   PetscErrorCode ierr;
   FMM_Tree_t* tree=fmm_data.tree;
@@ -199,6 +210,8 @@ int vec2tree(Vec& Y, FMMData fmm_data){
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#undef __FUNCT__
+#define __FUNCT__ "FMM_Init"
 int FMM_Init(MPI_Comm& comm, FMMData *fmm_data){
   int myrank, np;
   MPI_Comm_rank(comm, &myrank);
@@ -461,6 +474,8 @@ for(size_t i=i_start;i<i_end;i++){
   return MatCreateShell(comm,m,n,M,N,fmm_data,A);
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "FMMDestroy"
 int FMMDestroy(FMMData *fmm_data){
   delete fmm_data->fmm_mat;
   delete fmm_data->tree;
@@ -469,6 +484,8 @@ int FMMDestroy(FMMData *fmm_data){
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#undef __FUNCT__
+#define __FUNCT__ "PtWiseTreeMult"
 int PtWiseTreeMult(FMMData &fmm_data, FMM_Tree_t &tree2){
   FMM_Tree_t* tree1=fmm_data.tree;
   const MPI_Comm* comm=tree1->Comm();
@@ -593,6 +610,8 @@ int PtWiseTreeMult(FMMData &fmm_data, FMM_Tree_t &tree2){
 }
 
 
+#undef __FUNCT__
+#define __FUNCT__ "mult"
 int mult(Mat M, Vec U, Vec Y){
   PetscErrorCode ierr;
   FMMData* fmm_data=NULL;
@@ -723,9 +742,9 @@ int mult(Mat M, Vec U, Vec Y){
   ierr = VecPointwiseMult(alpha,alpha,U);
   ierr = VecAXPY(Y,1,alpha);
   // Output Vector ( Compute:  U + G[ \eta * U ] )
-  // pvfmm::Profile::Tic("FMM_Output",comm,true);
-  // ierr = VecAXPY(Y,1,U);CHKERRQ(ierr);
-  // pvfmm::Profile::Toc();
+  pvfmm::Profile::Tic("FMM_Output",comm,true);
+  ierr = VecAXPY(Y,1,U);CHKERRQ(ierr);
+  pvfmm::Profile::Toc();
   ierr = VecDestroy(&alpha); CHKERRQ(ierr);
 
   pvfmm::Profile::Toc();
@@ -733,6 +752,8 @@ int mult(Mat M, Vec U, Vec Y){
 }
 
 
+#undef __FUNCT__
+#define __FUNCT__ "eval_function_at_nodes"
 int eval_function_at_nodes(FMMData *fmm_data, void (*func)(double* coord, int n, double* out), std::vector<double> &func_vec){
   FMM_Tree_t*   tree=fmm_data->tree   ;
   const MPI_Comm& comm=*tree->Comm();
@@ -793,6 +814,8 @@ int eval_function_at_nodes(FMMData *fmm_data, void (*func)(double* coord, int n,
 }
 
 
+#undef __FUNCT__
+#define __FUNCT__ "eval_cheb_at_nodes"
 int eval_cheb_at_nodes(FMMData *fmm_data, Vec &val_vec){
 
   FMM_Tree_t* tree=fmm_data->tree;
@@ -877,6 +900,8 @@ int eval_cheb_at_nodes(FMMData *fmm_data, Vec &val_vec){
 
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "CompPhiUsingBorn"
 int CompPhiUsingBorn(Vec &true_sol, FMMData &fmm_data){
 
   // Initialize and get data about the problem
@@ -965,6 +990,8 @@ int CompPhiUsingBorn(Vec &true_sol, FMMData &fmm_data){
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#undef __FUNCT__
+#define __FUNCT__ "main"
 int main(int argc,char **args){
   PetscErrorCode ierr;
   PetscInitialize(&argc,&args,0,help);

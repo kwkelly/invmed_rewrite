@@ -16,7 +16,7 @@ Modify Makefile as needed.
 
 COMMANDLINE OPTIONS
 -------------------
--eta        <Real>   Inf norm of \rho
+-eta        <Real>   Inf norm of \eta*0.1
 -ref_tol    <Real>   Tree refinement tolerance
 -min_depth  <Int>    Minimum tree depth
 -max_depth  <Int>    Maximum tree depth
@@ -25,3 +25,4 @@ COMMANDLINE OPTIONS
 -gmres_tol  <Real>   GMRES residual tolerance
 -gmres_iter <Int>    GMRES maximum iterations
 
+Example: ./bin/invmed -eta 1 -ref_tol 1e-4 min_depth 3 -max_depth 5 -gmres_tol 1e-6

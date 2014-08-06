@@ -10,49 +10,35 @@ BINDIR = ./bin
 SRCDIR = ./src
 OBJDIR = ./obj
 INCDIR = ./include
+CPP_FILES := $(wildcard src/*.cpp)
+OBJ_FILES := $(addprefix obj/,$(notdir $(CPP_FILES:.cpp=.o)))
 
 TARGET_BIN = \
-       $(BINDIR)/invmed
+	$(BINDIR)/invmed
+
 
 all : $(TARGET_BIN)
 
-ifeq ($(INTEL_OFFLOAD_OK),yes) # Have MIC
-
-$(BINDIR)/%: $(OBJDIR)/%.o
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp 
 	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -D__MIC_ASYNCH__ $^       $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -no-offload      $^_nomic $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@_nomic
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $(PSC_INC) -I$(INCDIR) -c $< -o $@
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
-	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -D__MIC_ASYNCH__ $(PSC_INC) -I$(INCDIR) -c $^ -o $@
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -no-offload      $(PSC_INC) -I$(INCDIR) -c $^ -o $@_nomic
+#$(BINDIR)/%: $(OBJDIR)/%.o $()
+#	-@$(MKDIRS) $(dir $@)
+#	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $<   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
 
-else
-ifeq ($(NVCC_PVFMM),no) # No MIC, No GPU
-
-$(BINDIR)/%: $(OBJDIR)/%.o
+$(TARGET_BIN): $(OBJ_FILES)
 	-@$(MKDIRS) $(dir $@)
 	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
 
-else # Have GPU
-
-$(BINDIR)/%: $(OBJDIR)/%.o
+./bin/test : $(OBJDIR)/test.o $(OBJDIR)/funcs.o 
 	-@$(MKDIRS) $(dir $@)
 	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
-	mv $@ $@_gpu
-	touch $@
-	chmod +x $@
 
-endif
-
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+$(OBJDIR)/test.o : test/test.cpp
 	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $(PSC_INC) -I$(INCDIR) -c $^ -o $@
-
-endif
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $(PSC_INC) -I$(INCDIR) -c $< -o $@
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
 	$(RM) *~ */*~
-

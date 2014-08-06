@@ -3,11 +3,10 @@
 #include <petscksp.h>
 #include <profile.hpp>
 #include "funcs.hpp"
+#include <set>
 
 
 
-#undef __FUNCT__
-#define __FUNCT__ "main"
 int main(int argc, char* argv[]){
 
 	static char help[] = "\n\
@@ -67,35 +66,40 @@ int main(int argc, char* argv[]){
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
 	// Define new tree
-	
-	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
+	InvMedTree<FMM_Mat_t> *one= new InvMedTree<FMM_Mat_t>(comm);	
   const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	eta->bndry = bndry;
-	eta->kernel = kernel;
-	eta->cheb_deg = CHEB_DEG;
-	eta->mult_order = MUL_ORDER;
-	eta->tol = TOL;
-	eta->mindepth = MINDEPTH;
-	eta->maxdepth = MAXDEPTH;
-	eta->fn = eta_fn;
-	eta->f_max = eta_;
-	eta->dim = 3;
-	eta->adap = true;
-	eta->data_dof = 1;
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->cheb_deg = CHEB_DEG;
+	one->mult_order = MUL_ORDER;
+	one->tol = TOL;
+	one->mindepth = MINDEPTH;
+	one->maxdepth = MAXDEPTH;
+	one->fn = one_fn;
+	one->f_max = 1;
+	one->dim = 3;
+	one->adap = false;
+	one->data_dof = 2;
 
-
-	// initialize it
-  pvfmm::Profile::Tic("Initialize eta",&comm,true);
-		eta->Initialize();
-		eta->Write2File("results/eta",0);
+	// initialize one tree
+  pvfmm::Profile::Tic("Initialize one",&comm,true);
+		one->Initialize();
+		one->Write2File("results/one",0);
   pvfmm::Profile::Toc();
-	// Copy data and initialize new tree
+
+	InvMedTree<FMM_Mat_t>::Multiply(*one,*one);
+	one->Write2File("results/one_mult",0);
+
+	InvMedTree<FMM_Mat_t>::Add(*one,*one);
+	one->Write2File("results/one_add",0);
+	//////////////////////////////////////////////////////
+	//
+	//
+	//
+	//
 	
-  pvfmm::Profile::Tic("Initialize pt_sources",&comm,true);
-	InvMedTree<FMM_Mat_t> *pt_sources  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	InvMedTree<FMM_Mat_t> *pt_sources= new InvMedTree<FMM_Mat_t>(comm);	
 	pt_sources->bndry = bndry;
 	pt_sources->kernel = kernel;
 	pt_sources->cheb_deg = CHEB_DEG;
@@ -106,59 +110,70 @@ int main(int argc, char* argv[]){
 	pt_sources->fn = pt_sources_fn;
 	pt_sources->f_max = 1;
 	pt_sources->dim = 3;
-	pt_sources->adap = true;
+	pt_sources->adap = false;
 	pt_sources->data_dof = 2;
-	pt_sources->Initialize();
 
-	/////////////////////////////////////////
-
-  pvfmm::Profile::Tic("Initialize zero",&comm,true);
-	InvMedTree<FMM_Mat_t> *zero  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	zero->bndry = bndry;
-	zero->kernel = kernel;
-	zero->cheb_deg = CHEB_DEG;
-	zero->mult_order = MUL_ORDER;
-	zero->tol = TOL;
-	zero->mindepth = MINDEPTH;
-	zero->maxdepth = MAXDEPTH;
-	zero->fn = zero_fn;
-	zero->f_max = 1;
-	zero->dim = 3;
-	zero->adap = true;
-	zero->data_dof = 2;
-	zero->Initialize();
-
-
-	/////////////////////////////////////////
-  pvfmm::Profile::Tic("Initialize Phi_0",&comm,true);
-	InvMedTree<FMM_Mat_t> *phi_0  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	phi_0->bndry = bndry;
-	phi_0->kernel = kernel;
-	phi_0->cheb_deg = CHEB_DEG;
-	phi_0->mult_order = MUL_ORDER;
-	phi_0->tol = TOL;
-	phi_0->mindepth = MINDEPTH;
-	phi_0->maxdepth = MAXDEPTH;
-	phi_0->fn = pt_sources_fn;
-	phi_0->f_max = 1;
-	phi_0->dim = 3;
-	phi_0->adap = true;
-	phi_0->data_dof = 2;
-	phi_0->Initialize();
-	//phi_0->fmm_mat = new FMM_Mat_t;
-	//phi_0->fmm_mat->Initialize(phi_0->mult_order,phi_0->cheb_deg,*(phi_0->Comm()),phi_0->kernel);
-
-  phi_0->Write2File("results/pt_sources",0);
+	// initialize one tree
+  pvfmm::Profile::Tic("Initialize pt_sources",&comm,true);
+		pt_sources->Initialize();
+		pt_sources->Write2File("results/pt_sources",0);
   pvfmm::Profile::Toc();
 
-	phi_0->InitializeMat();
-	phi_0->SetupFMM(phi_0->fmm_mat);
-	phi_0->RunFMM();
-	phi_0->Copy_FMMOutput();
-  phi_0->Write2File("results/phi_0",0);
+	std::cout << "line 121" << std::endl;
+
+	std::cout << InvMedTree<FMM_Mat_t>::m_instances.size() << std::endl;
+
+	InvMedTree<FMM_Mat_t>::Multiply(*pt_sources,*one);
+	pt_sources->Write2File("results/pt_source_times_one",0);
+
+	InvMedTree<FMM_Mat_t>::Add(*pt_sources,*one);
+	pt_sources->Write2File("results/pt_sources_plus_one",0);
+
+	// Copy data and initialize new tree
+/*	
+  pvfmm::Profile::Tic("Initialize zero",&comm,true);
+		InvMedTree<FMM_Mat_t> *zero  = new InvMedTree<FMM_Mat_t>(comm);	
+		InvMedTree<FMM_Mat_t>::Copy(*zero, *eta);
+		zero->fn = zero_fn;
+		zero->data_dof = 2;
+		zero->f_max = 0;
+		zero->Initialize();
+		zero->Write2File("results/zero",0);
+  pvfmm::Profile::Toc();
+
+	//delete zero;
+
+
+  pvfmm::Profile::Tic("Initialize one",&comm,true);
+		InvMedTree<FMM_Mat_t> *one  = new InvMedTree<FMM_Mat_t>(comm);	
+		InvMedTree<FMM_Mat_t>::Copy(*one, *eta);
+		one->fn = one_fn;
+		one->data_dof = 2;
+		one->f_max = 1;
+		one->Initialize();
+		one->InitializeMat();
+		one->Write2File("results/one",0);
+    one->SetupFMM(one->fmm_mat);
+    one->RunFMM();
+    one->Copy_FMMOutput();
+		one->Write2File("results/one_fmm",0);
+  pvfmm::Profile::Toc();
+
+
+	InvMedTree<FMM_Mat_t>::Add(*one,*zero);
+	one->Write2File("results/one_add",0);
+
+	InvMedTree<FMM_Mat_t>::Add(*eta,*one);
+	eta->Write2File("results/etaplusone",0);
+*/
+/*
+  pvfmm::Profile::Tic("Initialize Phi_0",&comm,true);
+		InvMedTree<FMM_Mat_t> *phi_0  = new InvMedTree<FMM_Mat_t>(comm);	
+		InvMedTree<FMM_Mat_t>::Copy(*phi_0,*pt_sources);
+		phi_0->Initialize();
+		//phi_0->fmm_mat = new FMM_Mat_t;
+		//phi_0->fmm_mat->Initialize(phi_0->mult_order,phi_0->cheb_deg,*(phi_0->Comm()),phi_0->kernel);
+  pvfmm::Profile::Toc();
+*/
 	return 0;
 }

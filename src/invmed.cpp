@@ -66,99 +66,57 @@ int main(int argc, char* argv[]){
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-	// Define new tree
-	
-	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
   const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	eta->bndry = bndry;
-	eta->kernel = kernel;
-	eta->cheb_deg = CHEB_DEG;
-	eta->mult_order = MUL_ORDER;
-	eta->tol = TOL;
-	eta->mindepth = MINDEPTH;
-	eta->maxdepth = MAXDEPTH;
-	eta->fn = eta_fn;
-	eta->f_max = eta_;
-	eta->dim = 3;
-	eta->adap = true;
-	eta->data_dof = 1;
 
+	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
+	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
+	InvMedTree<FMM_Mat_t>::tol = TOL;
+	InvMedTree<FMM_Mat_t>::mindepth = MINDEPTH;
+	InvMedTree<FMM_Mat_t>::maxdepth = MAXDEPTH;
+	InvMedTree<FMM_Mat_t>::adap = true;
+	InvMedTree<FMM_Mat_t>::dim = 3;
+	InvMedTree<FMM_Mat_t>::data_dof = 2;
 
-	// initialize it
-  pvfmm::Profile::Tic("Initialize eta",&comm,true);
-		eta->Initialize();
-		eta->Write2File("results/eta",0);
-  pvfmm::Profile::Toc();
-	// Copy data and initialize new tree
-	
-  pvfmm::Profile::Tic("Initialize pt_sources",&comm,true);
-	InvMedTree<FMM_Mat_t> *pt_sources  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	// Define new trees
+	InvMedTree<FMM_Mat_t> *pt_sources= new InvMedTree<FMM_Mat_t>(comm);	
 	pt_sources->bndry = bndry;
 	pt_sources->kernel = kernel;
-	pt_sources->cheb_deg = CHEB_DEG;
-	pt_sources->mult_order = MUL_ORDER;
-	pt_sources->tol = TOL;
-	pt_sources->mindepth = MINDEPTH;
-	pt_sources->maxdepth = MAXDEPTH;
 	pt_sources->fn = pt_sources_fn;
 	pt_sources->f_max = 1;
-	pt_sources->dim = 3;
-	pt_sources->adap = true;
-	pt_sources->data_dof = 2;
-	pt_sources->Initialize();
 
-	/////////////////////////////////////////
+	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
+	eta->bndry = bndry;
+	eta->kernel = kernel;
+	eta->fn = eta_fn;
+	eta->f_max = .01;
 
-  pvfmm::Profile::Tic("Initialize zero",&comm,true);
-	InvMedTree<FMM_Mat_t> *zero  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	zero->bndry = bndry;
-	zero->kernel = kernel;
-	zero->cheb_deg = CHEB_DEG;
-	zero->mult_order = MUL_ORDER;
-	zero->tol = TOL;
-	zero->mindepth = MINDEPTH;
-	zero->maxdepth = MAXDEPTH;
-	zero->fn = zero_fn;
-	zero->f_max = 1;
-	zero->dim = 3;
-	zero->adap = true;
-	zero->data_dof = 2;
-	zero->Initialize();
-
-
-	/////////////////////////////////////////
-  pvfmm::Profile::Tic("Initialize Phi_0",&comm,true);
-	InvMedTree<FMM_Mat_t> *phi_0  = new InvMedTree<FMM_Mat_t>(comm);	
-	//const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
-	//pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	InvMedTree<FMM_Mat_t> *phi_0 = new InvMedTree<FMM_Mat_t>(comm);	
 	phi_0->bndry = bndry;
 	phi_0->kernel = kernel;
-	phi_0->cheb_deg = CHEB_DEG;
-	phi_0->mult_order = MUL_ORDER;
-	phi_0->tol = TOL;
-	phi_0->mindepth = MINDEPTH;
-	phi_0->maxdepth = MAXDEPTH;
 	phi_0->fn = pt_sources_fn;
 	phi_0->f_max = 1;
-	phi_0->dim = 3;
-	phi_0->adap = true;
-	phi_0->data_dof = 2;
-	phi_0->Initialize();
-	//phi_0->fmm_mat = new FMM_Mat_t;
-	//phi_0->fmm_mat->Initialize(phi_0->mult_order,phi_0->cheb_deg,*(phi_0->Comm()),phi_0->kernel);
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
-  phi_0->Write2File("results/pt_sources",0);
-  pvfmm::Profile::Toc();
+	eta->Write2File("results/output",0);
 
-	phi_0->InitializeMat();
-	phi_0->SetupFMM(phi_0->fmm_mat);
+
+  FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	// compute phi_0
+	phi_0->SetupFMM(fmm_mat);
 	phi_0->RunFMM();
 	phi_0->Copy_FMMOutput();
   phi_0->Write2File("results/phi_0",0);
+	
+	std::cout << "here" << std::endl;
+	// compute phi using born approx
+	eta->Multiply(phi_0,-1);
+	std::cout << "here2" << std::endl;
+	eta->RunFMM();
+	eta->Copy_FMMOutput();
+	eta->Add(phi_0,1);
+  eta->Write2File("results/phi",0);
+		
 	return 0;
 }

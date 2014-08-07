@@ -3,8 +3,7 @@
 #include <petscksp.h>
 #include <profile.hpp>
 #include "funcs.hpp"
-
-
+#include <pvfmm_common.hpp>
 
 #undef __FUNCT__
 #define __FUNCT__ "main"
@@ -62,6 +61,11 @@ int main(int argc, char* argv[]){
 
   PetscOptionsGetReal(NULL,       "-eta" ,&    eta_   ,NULL);
 
+	std::cout << "__PROFILE__: " << __PROFILE__ << std::endl;
+	#ifdef __VERBOSE__
+	std::cout << "__VERBOSE__: on" << std::endl;
+	#endif
+
 	// Define some stuff!
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
@@ -69,6 +73,7 @@ int main(int argc, char* argv[]){
   const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
+	// Define static variables
 	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
 	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
 	InvMedTree<FMM_Mat_t>::tol = TOL;
@@ -98,9 +103,6 @@ int main(int argc, char* argv[]){
 	phi_0->f_max = 1;
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
-	eta->Write2File("results/output",0);
-
-
   FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
 	// compute phi_0
@@ -108,15 +110,22 @@ int main(int argc, char* argv[]){
 	phi_0->RunFMM();
 	phi_0->Copy_FMMOutput();
   phi_0->Write2File("results/phi_0",0);
+
+  // Copy phi_0 to phi and and set it up for FMM	
+	InvMedTree<FMM_Mat_t> *phi = new InvMedTree<FMM_Mat_t>(comm);	
+	phi->Copy(phi_0);
+  phi->Write2File("results/phi_0_copy",0);
+	phi->SetupFMM(fmm_mat);
 	
-	std::cout << "here" << std::endl;
 	// compute phi using born approx
-	eta->Multiply(phi_0,-1);
-	std::cout << "here2" << std::endl;
-	eta->RunFMM();
-	eta->Copy_FMMOutput();
-	eta->Add(phi_0,1);
-  eta->Write2File("results/phi",0);
-		
+	phi->Multiply(eta,-1);  
+	phi->RunFMM();
+	phi->Copy_FMMOutput();
+	phi->Add(phi_0,1);
+  phi->Write2File("results/phi",0);
+
+	phi->Add(phi_0,-1);
+  phi->Write2File("results/born_difference",0);
+
 	return 0;
 }

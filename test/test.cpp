@@ -106,19 +106,19 @@ int main(int argc, char* argv[]){
 	pt_sources->Write2File("results/pt_sources",0);
 
 	// One times one test
-	one->Multiply(one);
+	one->Multiply(one,1);
 	one->Write2File("results/one_mult",0);
 
 	// One plus one test
-	one->Add(one);
+	one->Add(one,1);
 	one->Write2File("results/one_add",0);
 
 	// one plus pt_sources func test
-	pt_sources->Multiply(one);
+	pt_sources->Multiply(one,1);
 	pt_sources->Write2File("results/pt_source_times_one",0);
 
 	// One times pt function test
-	pt_sources->Add(one);
+	pt_sources->Add(one,1);
 	pt_sources->Write2File("results/pt_sources_plus_one",0);
 
 	return 0;

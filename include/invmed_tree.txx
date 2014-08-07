@@ -264,10 +264,6 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 	std::vector<FMMNode_t*> nlist1 = this->GetNGLNodes();
 	std::vector<FMMNode_t*> nlist2 = other->GetNGLNodes();
 
-//	std::cout << nlist1[1]->ChebData() << std::endl;
-//	std::cout << nlist1[1]->DataDOF() << std::endl;
-//	std::cout << n_coeff3 <<std::endl;
-//	std::cout << n_nodes3 <<std::endl;
 	std::vector<double> cheb_node_coord1=pvfmm::cheb_nodes<double>(cheb_deg, 1);
 	#pragma omp parallel for
 	for(size_t i=0;i<cheb_node_coord1.size();i++){
@@ -282,7 +278,7 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 		pvfmm::Vector<double> coeff_vec2(n_coeff3*data_dof);
 		pvfmm::Vector<double> val_vec1(n_nodes3*data_dof);
 		pvfmm::Vector<double> val_vec2(n_nodes3*data_dof);
-		//	std::cout << "val_vec2.Dim() " << val_vec2.Dim() << std::endl;
+
 		for(size_t i=i_start;i<i_end;i++){
 			double s=std::pow(2.0,COORD_DIM*nlist1[i]->Depth()*0.5*SCAL_EXP);
 			coeff_vec1 = nlist1[i]->ChebData();
@@ -291,9 +287,6 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 			// val_vec: Evaluate coeff_vec at Chebyshev node points
 			cheb_eval(coeff_vec1, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec1);
 			cheb_eval(coeff_vec2, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec2);
-			//			std::cout << "dim :" << val_vec2.Dim() << std::endl;
-			//		std::cout << "dim :" << val_vec1.Dim() << std::endl;
-
 
 			for(size_t j0=0;j0<n_nodes3;j0++){
 				for(size_t j1=0;j1<data_dof;j1++){
@@ -301,7 +294,6 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 					val_vec1[j1*n_nodes3+j0]+=multiplier*(val_vec2[j1*n_nodes3+j0]);
 				}
 			}
-
 
 			{ // Compute Chebyshev approx
 				pvfmm::Vector<double>& coeff_vec=nlist1[i]->ChebData();
@@ -345,5 +337,50 @@ template <class FMM_Mat_t>
 void CreateNewTree(){
 	// TODO
 	//
+	return;
+}
+
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::Copy(InvMedTree<FMM_Mat_t>* other){
+
+	int myrank, np;
+	MPI_Comm_rank(*(this->Comm()), &myrank);
+	MPI_Comm_size(*(this->Comm()), &np);
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	typename FMMNode_t::NodeData tree_data;
+	
+	tree_data.max_pts=1; // Points per octant.
+	tree_data.dim=InvMedTree<FMM_Mat_t>::dim;
+	tree_data.max_depth=InvMedTree<FMM_Mat_t>::maxdepth;
+	tree_data.cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	tree_data.data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+
+	// Copy data over from old tree
+	this->f_max = other->f_max;
+	this->bndry = other->bndry;
+	this->fn    = other->fn;
+	tree_data.input_fn=this->fn;
+	tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*(this->f_max);
+
+	// Get point coords of other
+	std::vector<double> pt_coord;
+	pt_coord.clear();
+	std::vector<FMMNode_t*> nlist=other->GetNodeList();
+	for(size_t i=0;i<nlist.size();i++){
+		if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+			double s=pow(0.5,nlist[i]->Depth()+1);
+			double* c=nlist[i]->Coord();
+			pt_coord.push_back(c[0]+s);
+			pt_coord.push_back(c[1]+s);
+			pt_coord.push_back(c[2]+s);
+		}
+	}
+	tree_data.pt_coord=pt_coord;
+
+	//Create Tree and initialize with input data.
+	this->Initialize(&tree_data);
+	this->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,this->bndry);
+	std::cout << (this->GetNodeList()).size() << std::endl;
 	return;
 }

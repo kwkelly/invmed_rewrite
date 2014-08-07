@@ -55,6 +55,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   void Add(InvMedTree<FMM_Mat_t>* other, double multiplier);
   void Multiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
   void CreateNewTree();
+	void Copy(InvMedTree<FMM_Mat_t>* other);
 
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
 };

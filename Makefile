@@ -39,6 +39,13 @@ $(OBJDIR)/test.o : test/test.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $(PSC_INC) -I$(INCDIR) -c $< -o $@
 
+./bin/profile_test : $(OBJDIR)/profile_test.o
+	-@$(MKDIRS) $(dir $@)
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
+
+$(OBJDIR)/profile_test.o : test/profile_test.cpp
+	-@$(MKDIRS) $(dir $@)
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $(PSC_INC) -I$(INCDIR) -c $< -o $@
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*
 	$(RM) *~ */*~

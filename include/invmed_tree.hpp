@@ -54,6 +54,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	void InitializeMat();
   void Add(InvMedTree<FMM_Mat_t>* other, double multiplier);
   void Multiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
+	void ScalarMultiply(double multiplier);
   void CreateNewTree();
 	void Copy(InvMedTree<FMM_Mat_t>* other);
 

@@ -62,3 +62,15 @@ void one_fn(double* coord, int n, double* out){
     }
   }
 }
+
+void eye_fn(double* coord, int n, double* out){ 
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    double* c=&coord[i*COORD_DIM];
+    {
+      out[i*dof]=0;
+      out[i*dof+1]=1;
+    }
+  }
+}

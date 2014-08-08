@@ -9,4 +9,6 @@ void zero_fn(double* coord, int n, double* out);
 
 void one_fn(double* coord, int n, double* out);
 
+void eye_fn(double* coord, int n, double* out);
+
 #endif

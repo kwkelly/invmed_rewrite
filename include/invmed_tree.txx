@@ -287,7 +287,7 @@ void InvMedTree<FMM_Mat_t>::ScalarMultiply(double multiplier){
 
 			for(size_t j0=0;j0<n_nodes3;j0++){
 				for(size_t j1=0;j1<data_dof;j1++){
-					val_vec1[j1*n_nodes3+j0]*=multiplier
+					val_vec1[j1*n_nodes3+j0]*=multiplier;
 				}
 			}
 

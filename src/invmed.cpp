@@ -2,6 +2,7 @@
 #include <iostream>
 #include <petscksp.h>
 #include <profile.hpp>
+#include <kernel.hpp>
 #include "funcs.hpp"
 //#include "petsc_utils.hpp"
 #include "typedefs.hpp"
@@ -25,6 +26,48 @@ int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y);
 #define __FUNCT__ "vec2tree"
 template <class FMM_Mat_t>
 int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree);
+
+void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k);
+void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+
+void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k){
+#ifndef __MIC__
+	pvfmm::Profile::Add_FLOP((long long)trg_cnt*(long long)src_cnt*(24*dof));
+#endif
+	for(int t=0;t<trg_cnt;t++){
+		for(int i=0;i<dof;i++){
+			double p[2]={0,0};
+			for(int s=0;s<src_cnt;s++){
+				double dX_reg=r_trg[3*t ]-r_src[3*s ];
+				double dY_reg=r_trg[3*t+1]-r_src[3*s+1];
+				double dZ_reg=r_trg[3*t+2]-r_src[3*s+2];
+				double R = (dX_reg*dX_reg+dY_reg*dY_reg+dZ_reg*dZ_reg);
+				if (R!=0){
+					R = sqrt(R);
+					double invR=1.0/R;
+					invR = invR/(4*const_pi<double>());
+					double G[2]={cos(k*R)*invR, sin(k*R)*invR};
+					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
+					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
+				}
+			}
+			k_out[(t*dof+i)*2+0] += p[0];
+			k_out[(t*dof+i)*2+1] += p[1];
+		}
+	}
+}
+
+void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, 1);
+};
+
+void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -1);
+};
+
+const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
+const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_kernel_conj_fn>("helm_kernel_conj", 3, std::pair<int,int>(2,2));
 
 int mult(Mat M, Vec U, Vec Y){
 
@@ -197,7 +240,7 @@ int main(int argc, char* argv[]){
 
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
-  const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
+  const pvfmm::Kernel<double>* kernel=&helm_kernel;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
 	// Define static variables
@@ -262,6 +305,7 @@ int main(int argc, char* argv[]){
   phi->Write2File("results/phi",0);
 
 	phi->Add(phi_0,-1);
+	phi->ScalarMultiply(-1);
   phi->Write2File("results/born_difference",0);
 
 
@@ -293,6 +337,7 @@ int main(int argc, char* argv[]){
   KSPSetTolerances(ksp  ,GMRES_TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
   //KSPGMRESSetRestart(ksp  , MAX_ITER  );
   KSPGMRESSetRestart(ksp  , 100  );
+	KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization);
   ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr);
 	ierr = KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL); CHKERRQ(ierr);
 

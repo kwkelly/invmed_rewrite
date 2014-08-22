@@ -9,6 +9,7 @@ void eta_fn(double* coord, int n, double* out){
     double* c=&coord[i*COORD_DIM];
     {
       double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			r_2 = sqrt(r_2);
       out[i*dof]=eta_*(r_2<0.1?0.01:0.0);//*exp(-L*r_2);
 			//std::cout << out[i] << std::endl;
 			out[i*dof+1] = 0; //complex part

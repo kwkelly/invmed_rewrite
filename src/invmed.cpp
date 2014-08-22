@@ -92,7 +92,7 @@ int mult(Mat M, Vec U, Vec Y){
 	// Regularize
 	tree2vec(temp,Y);
 
-	PetscScalar alpha = (PetscScalar).00001;
+	PetscScalar alpha = (PetscScalar).000001;
 	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
 
 	return 0;
@@ -240,6 +240,7 @@ int main(int argc, char* argv[]){
 
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
+  //const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
   const pvfmm::Kernel<double>* kernel=&helm_kernel;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
@@ -281,6 +282,7 @@ int main(int argc, char* argv[]){
 
   FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	eta->Write2File("results/eta",0);
 	// compute phi_0
 	phi_0->SetupFMM(fmm_mat);
 	phi_0->RunFMM();

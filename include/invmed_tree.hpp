@@ -5,12 +5,13 @@
 #include <fmm_cheb.hpp>
 #include <fmm_node.hpp>
 #include <fmm_tree.hpp>
+#include <pvfmm.hpp>
 #include <petscksp.h>
 #include <cassert>
 #include <cstring>
 #include <profile.hpp>
 #include <mpi.h>
-#include<set>
+#include <set>
 
 //typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 //typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
@@ -27,7 +28,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   const pvfmm::Kernel<double>* kernel;
   FMM_Mat_t* fmm_mat;
   pvfmm::BoundaryType bndry;
-	void (*fn)(double* coord, int n, double* out);
+	void (*fn)(const  double* coord, int n, double* out);
 	double f_max;
 
 	PetscInt m,M,n,N,l,L;
@@ -54,9 +55,14 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	void InitializeMat();
   void Add(InvMedTree<FMM_Mat_t>* other, double multiplier);
   void Multiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
+  void ConjMultiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
 	void ScalarMultiply(double multiplier);
   void CreateNewTree();
 	void Copy(InvMedTree<FMM_Mat_t>* other);
+	pvfmm::PtFMM_Tree* CreatePtFMMTree(std::vector<double> &src_coord, std::vector<double> &src_value, const pvfmm::Kernel<double>* kernel);
+	void Trg2Tree(std::vector<double> &trg_value);
+	std::vector<double> ReadVals(std::vector<double> &coord);
+	static void SetSrcValues(const std::vector<double> coords, const std::vector<double> values, pvfmm::PtFMM_Tree* tree);
 
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
 };

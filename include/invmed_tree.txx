@@ -4,6 +4,7 @@
 #include <fmm_tree.hpp>
 #include <mpi.h>
 #include <profile.hpp>
+#include <pvfmm.hpp>
 #include <iostream>
 #include <vector>
 #include <set>
@@ -131,7 +132,7 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 			if(!myrank) std::cout<<'\n';
 		}
 */
-		std::cout << "here" << std::endl;
+//		std::cout << "here" << std::endl;
 
 
 		int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -220,14 +221,21 @@ void InvMedTree<FMM_Mat_t>::Multiply(InvMedTree* other, double multiplier){
 			//			std::cout << "dim :" << val_vec2.Dim() << std::endl;
 			//		std::cout << "dim :" << val_vec1.Dim() << std::endl;
 
-
+			double temp_real;
+			double temp_im;
 			for(size_t j0=0;j0<n_nodes3;j0++){
 				//for(size_t j1=0;j1<data_dof;j1++){
 					//why is this like this?
 					//real*real - im*im
-					val_vec1[0*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+					temp_real = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+					//val_vec1[0*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
 					// real*im + im*real
-					val_vec1[1*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+					temp_im = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+					//val_vec1[1*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+					//std::cout << temp_real << std::endl;
+					//std::cout << temp_im << std::endl;
+					val_vec1[0*n_nodes3+j0] = temp_real;
+					val_vec1[1*n_nodes3+j0] = temp_im;
 			//	}
 			}
 
@@ -348,10 +356,11 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 			cheb_eval(coeff_vec1, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec1);
 			cheb_eval(coeff_vec2, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec2);
 
-			for(size_t j0=0;j0<n_nodes3;j0++){
-				for(size_t j1=0;j1<data_dof;j1++){
+			for(size_t j1=0;j1<data_dof;j1++){
+				for(size_t j0=0;j0<n_nodes3;j0++){
 					//why is this like this?
 					val_vec1[j1*n_nodes3+j0]+=multiplier*(val_vec2[j1*n_nodes3+j0]);
+					//std::cout << val_vec1[j1*n_nodes3+j0] << std::endl;
 				}
 			}
 
@@ -503,3 +512,261 @@ void InvMedTree<FMM_Mat_t>::Copy(InvMedTree<FMM_Mat_t>* other){
 	return;
 }
 
+template <class FMM_Mat_t>
+pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &src_coord, std::vector<double> &src_value, const pvfmm::Kernel<double>* kernel){
+
+	int SCAL_EXP = 1;
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm_const=this->Comm();
+	MPI_Comm* comm = const_cast<MPI_Comm*>(comm_const);
+	///////////////
+	// Get trg_coord. These are the locations of the chebyshev nodes in each of the nodes of the octree.
+	///////////////
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
+	std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
+	//for(int i=0)
+	size_t n_chebnodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	
+	std::vector<double> trg_coord;
+	std::vector<FMMNode_t*> nlist=this->GetNodeList();
+	for(size_t i=0;i<nlist.size();i++){
+		if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+
+			double s=pow(0.5,nlist[i]->Depth());
+			double* c=nlist[i]->Coord();
+			for(int j=0;j<n_chebnodes3*3;j=j+3){
+				trg_coord.push_back(c[0] + cheb_node_coord3[j+0]*s);
+				trg_coord.push_back(c[1] + cheb_node_coord3[j+1]*s);
+				trg_coord.push_back(c[2] + cheb_node_coord3[j+2]*s);
+			}
+		}
+	}
+
+	// Now we can create the new octree
+  pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_value, trg_coord, *comm );
+	std::cout << "after new tree" << std::endl;
+  // Load matrices.
+  pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	std::cout << "after matrices" << std::endl;
+  matrices->Initialize(mult_order, *comm, kernel);
+	std::cout << "after init" << std::endl;
+
+  // FMM Setup
+  pt_tree->SetupFMM(matrices);
+	std::cout << "after setup" << std::endl;
+
+	return pt_tree;
+}
+
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::Trg2Tree(std::vector<double> &trg_value){
+
+	int SCAL_EXP = 1;
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm=this->Comm();
+	int omp_p=omp_get_max_threads();
+	//int omp_p = 1;
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+
+	int n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+	int n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	
+	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
+	
+	#pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist.size()* tid   )/omp_p;
+		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+		pvfmm::Vector<double> val_vec(n_nodes3*data_dof);
+		//	std::cout << "val_vec2.Dim() " << val_vec2.Dim() << std::endl;
+		for(size_t i=i_start;i<i_end;i++){
+			for(size_t j0=0;j0<n_nodes3;j0++){
+					// In a given node of the octree, trg_value has the real and imaginary parts
+					// next to each other. (real, imag, real, imag) for each point that we evaluated
+					// at. val_vec needs to have all the real parts, then all the imaginary parts.
+					// (real, real, real, imag, imag imag). Thus we have to reorder on insert.
+					// Get real part and then place it in the first n_nodes part of val_vec
+					val_vec[0*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 0];
+
+					//std::cout <<  trg_value[i*n_nodes3*data_dof+j0*data_dof + 0] << std::endl;
+					//std::cout << i*n_nodes3*data_dof+j0*data_dof + 0 << std::endl;
+					// Get the complex part and place those values in the second n_nodes3 part of val_vec
+					val_vec[1*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 1];
+			}
+
+			{ // Compute Chebyshev approx
+				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+				if(coeff_vec.Dim()!=(data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6){
+					coeff_vec.ReInit((data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6);
+				}
+				pvfmm::cheb_approx<double,double>(&val_vec[0], cheb_deg, data_dof, &coeff_vec[0]);
+				nlist[i]->DataDOF()=data_dof;
+			}
+		}
+	}
+
+	return;
+}
+
+
+
+template <class FMM_Mat_t>
+std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+
+
+	int dim=InvMedTree<FMM_Mat_t>::dim;
+	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+	assert(coord.size()%dim == 0);
+	int n_pts = coord.size() / 3;
+	std::vector<double> x;
+	std::vector<double> y;
+	std::vector<double> z;
+	std::vector<double> val(n_pts*data_dof);
+
+	FMMNode_t* r_node=static_cast<FMMNode_t*>(this->RootNode());
+	double *v = val.data();
+
+	for(int i=0;i<n_pts;i++){
+		x.push_back(coord[i*dim + 0]);
+		y.push_back(coord[i*dim + 1]);
+		z.push_back(coord[i*dim + 2]);
+		r_node->ReadVal(x,y,z, &v[i*data_dof], true);
+
+		x.clear();
+		y.clear();
+		z.clear();
+	}
+
+	return val;
+
+}
+
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const std::vector<double> values, pvfmm::PtFMM_Tree* tree){
+
+	typedef pvfmm::FMM_Node<pvfmm::MPI_Node<double> > MPI_Node_t;
+	int dim = InvMedTree<FMM_Mat_t>::dim;
+	int data_dof = InvMedTree<FMM_Mat_t>::data_dof;
+
+	std::vector<MPI_Node_t*> nlist=tree->GetNodeList();
+	std::vector<MPI_Node_t*> src_nodes;
+	std::cout << "n_list size" << nlist.size() << std::endl;
+	//std::vector<pvfmm::MortonId> mins=pt_tree->GetMins();
+//	for(int i=0;i<mins.size();i++){
+//		std::cout << mins[i] << std::endl;
+//	}
+	for(int i=0;i<nlist.size();i++){
+//		pvfmm::Vector<double> *sv = &(nlist[i]->src_value);
+//		Add the nodes with src_coords to the src_node vector
+		pvfmm::Vector<double> *sc = &(nlist[i]->src_coord);
+		if(sc->Capacity() >0){
+			src_nodes.push_back(nlist[i]);
+		}
+	}
+
+	// Now we loop through the nodes with nonempty src_coord vectors, and overwrite the src_values with 
+	// those values in the matching values vector.
+	for(int i=0;i<src_nodes.size();i++){
+		pvfmm::Vector<double> *sv = &(src_nodes[i]->src_value);
+		pvfmm::Vector<double> *sc = &(src_nodes[i]->src_coord);
+		for(int j=0;j<(coords.size())/dim;j++){
+			bool match = 1;
+			for(int k=0;k<dim;k++){
+				if(fabs(coords[j*dim+k]-(sc[0])[k])>.00001){
+					match*=0;
+				}
+			}
+			if(match){
+				//std::cout << "j: " << j << std::endl;
+				//std::cout << "i: " << i << std::endl;
+				for(int k=0;k<data_dof;k++){
+					(sv[0][k]) = values[j*data_dof+k];
+					std::cout << sv[0][k] << std::endl;
+				}
+			}
+		}
+	}
+	return;
+}
+
+
+
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
+
+	//  may need to change this
+	int SCAL_EXP = 1;
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm=this->Comm();
+	int omp_p=omp_get_max_threads();
+	//int omp_p = 1;
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+	size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+
+	std::vector<FMMNode_t*> nlist1 = this->GetNGLNodes();
+	std::vector<FMMNode_t*> nlist2 = other->GetNGLNodes();
+
+	std::vector<double> cheb_node_coord1=pvfmm::cheb_nodes<double>(cheb_deg, 1);
+	#pragma omp parallel for
+	for(size_t i=0;i<cheb_node_coord1.size();i++){
+		cheb_node_coord1[i]=cheb_node_coord1[i]*2.0-1.0;
+	}
+
+	#pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist1.size()* tid   )/omp_p;
+		size_t i_end  =(nlist1.size()*(tid+1))/omp_p;
+		pvfmm::Vector<double> coeff_vec1(n_coeff3*data_dof);
+		pvfmm::Vector<double> coeff_vec2(n_coeff3*data_dof);
+		pvfmm::Vector<double> val_vec1(n_nodes3*data_dof);
+		pvfmm::Vector<double> val_vec2(n_nodes3*data_dof);
+		//	std::cout << "val_vec2.Dim() " << val_vec2.Dim() << std::endl;
+		for(size_t i=i_start;i<i_end;i++){
+			double s=std::pow(2.0,COORD_DIM*nlist1[i]->Depth()*0.5*SCAL_EXP);
+			coeff_vec1 = nlist1[i]->ChebData();
+			coeff_vec2 = nlist2[i]->ChebData();
+
+			// val_vec: Evaluate coeff_vec at Chebyshev node points
+			cheb_eval(coeff_vec1, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec1);
+			cheb_eval(coeff_vec2, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec2);
+			//			std::cout << "dim :" << val_vec2.Dim() << std::endl;
+			//		std::cout << "dim :" << val_vec1.Dim() << std::endl;
+			double temp_real;
+			double temp_im;
+
+
+			for(size_t j0=0;j0<n_nodes3;j0++){
+				//for(size_t j1=0;j1<data_dof;j1++){
+					//why is this like this?
+					//real*real - im*im
+					temp_real=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+					// real*im + im*real
+					temp_im=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+					val_vec1[0*n_nodes3+j0] = temp_real;
+					val_vec1[1*n_nodes3+j0] = temp_im;
+			//	}
+			}
+
+
+			{ // Compute Chebyshev approx
+				pvfmm::Vector<double>& coeff_vec=nlist1[i]->ChebData();
+				if(coeff_vec.Dim()!=(data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6){
+					coeff_vec.ReInit((data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6);
+				}
+				pvfmm::cheb_approx<double,double>(&val_vec1[0], cheb_deg, data_dof, &coeff_vec[0]);
+				nlist1[i]->DataDOF()=data_dof;
+			}
+		}
+	}
+
+	return;
+}

@@ -6,11 +6,14 @@
 #include "funcs.hpp"
 //#include "petsc_utils.hpp"
 #include "typedefs.hpp"
+#include <pvfmm.hpp>
 #include <pvfmm_common.hpp>
 //BEGIN COPY FROM UTILS
 struct InvMedData{
 	InvMedTree<FMM_Mat_t>* phi_0;
 	InvMedTree<FMM_Mat_t>* temp;
+	pvfmm::PtFMM_Tree* pt_tree;
+	std::vector<double> src_coord;
 };
 
 #undef __FUNCT__
@@ -69,17 +72,22 @@ void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, dou
 const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_kernel_conj_fn>("helm_kernel_conj", 3, std::pair<int,int>(2,2));
 
+#undef __FUNCT__
+#define __FUNCT__ "mult"
 int mult(Mat M, Vec U, Vec Y){
 
 	PetscErrorCode ierr;
+	// Get context
 	InvMedData *invmed_data = NULL;
 	MatShellGetContext(M, &invmed_data);
 	InvMedTree<FMM_Mat_t>* phi_0 = invmed_data->phi_0;
 	InvMedTree<FMM_Mat_t>* temp = invmed_data->temp;
+	pvfmm::PtFMM_Tree* pt_tree = invmed_data->pt_tree;
+	std::vector<double> src_coord = invmed_data->src_coord;
 
 	const MPI_Comm* comm=invmed_data->phi_0->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
-	int omp_p=omp_get_max_threads();
+	//int omp_p=omp_get_max_threads();
 	vec2tree(U,temp);
 
 	temp->Multiply(phi_0,1);
@@ -89,11 +97,31 @@ int mult(Mat M, Vec U, Vec Y){
 	temp->RunFMM();
 	temp->Copy_FMMOutput();
 
+	// Sample at the points in src_coord, then apply the transpose
+	// operator.
+	std::vector<double> src_values = temp->ReadVals(src_coord);
+
+//	std::cout << "src_values[i]" << std::endl;
+//	for(int i=0;i<src_values.size();i++){
+//		std::cout << src_values[i] << std::endl;
+//	}
+	InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
+
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
+
+	// Insert the values back in
+	temp->Trg2Tree(trg_value);
+	
+	// Ptwise multiply by the conjugate of phi_0
+	temp->ConjMultiply(phi_0,1);
+
+
 	// Regularize
 	tree2vec(temp,Y);
 
-	PetscScalar alpha = (PetscScalar).000001;
-	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
+	//PetscScalar alpha = (PetscScalar)1e-10;
+	//ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
 
 	return 0;
 }
@@ -200,7 +228,8 @@ int main(int argc, char* argv[]){
 	PetscInt  MAXDEPTH  =MAX_DEPTH;// Maximum tree depth
 	PetscInt  MINDEPTH   =4;       // Minimum tree depth
 	PetscReal       TOL  =1e-3;    // Tolerance
-	PetscReal GMRES_TOL  =1e-6;    // Fine mesh GMRES tolerance
+	//PetscReal GMRES_TOL  =1e-6;   // Fine mesh GMRES tolerance
+	PetscReal CG_TOL  =1e-6;    	// Fine mesh CG tolerance
 	PetscInt  CHEB_DEG  =14;       // Fine mesh Cheb. order
 	PetscInt MUL_ORDER  =10;       // Fine mesh mult  order
 	PetscInt MAX_ITER  =200;
@@ -225,7 +254,8 @@ int main(int argc, char* argv[]){
   PetscOptionsGetInt (NULL, "-max_depth" ,&MAXDEPTH   ,NULL);
   PetscOptionsGetInt (NULL, "-min_depth" ,&MINDEPTH   ,NULL);
   PetscOptionsGetReal(NULL,   "-ref_tol" ,&      TOL  ,NULL);
-  PetscOptionsGetReal(NULL, "-gmres_tol" ,&GMRES_TOL  ,NULL);
+  //PetscOptionsGetReal(NULL, "-gmres_tol" ,&GMRES_TOL  ,NULL);
+  PetscOptionsGetReal(NULL, "-cg_tol" ,&CG_TOL  ,NULL);
 
   PetscOptionsGetInt (NULL,   "-fmm_q"   ,& CHEB_DEG  ,NULL);
   PetscOptionsGetInt (NULL,   "-fmm_m"   ,&MUL_ORDER  ,NULL);
@@ -242,7 +272,30 @@ int main(int argc, char* argv[]){
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
   //const pvfmm::Kernel<double>* kernel=&pvfmm::ker_helmholtz;
   const pvfmm::Kernel<double>* kernel=&helm_kernel;
+  const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	// Set up the positions of the detectors (must be outside the object)
+
+	std::vector<double> src_coord;
+	src_coord.push_back(0.3);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.7);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.3);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.7);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.3);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.7);
 
 	// Define static variables
 	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
@@ -259,13 +312,13 @@ int main(int argc, char* argv[]){
 	pt_sources->bndry = bndry;
 	pt_sources->kernel = kernel;
 	pt_sources->fn = pt_sources_fn;
-	pt_sources->f_max = 1;
+	pt_sources->f_max = sqrt(500/M_PI);
 
 	InvMedTree<FMM_Mat_t> *temp= new InvMedTree<FMM_Mat_t>(comm);	
 	temp->bndry = bndry;
 	temp->kernel = kernel;
 	temp->fn = zero_fn;
-	temp->f_max = 1;
+	temp->f_max = 0;
 
 	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
 	eta->bndry = bndry;
@@ -277,18 +330,22 @@ int main(int argc, char* argv[]){
 	phi_0->bndry = bndry;
 	phi_0->kernel = kernel;
 	phi_0->fn = pt_sources_fn;
-	phi_0->f_max = 1;
+	phi_0->f_max = sqrt(500/M_PI);
+
+	// Set up
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
   FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
 	eta->Write2File("results/eta",0);
+	phi_0->Write2File("results/pt_sources",0);
 	// compute phi_0
 	phi_0->SetupFMM(fmm_mat);
 	phi_0->RunFMM();
 	phi_0->Copy_FMMOutput();
   phi_0->Write2File("results/phi_0",0);
 
+	std::vector<double> pt_sources_samples = pt_sources->ReadVals(src_coord);
 	temp->SetupFMM(fmm_mat);
 
   // Copy phi_0 to phi and and set it up for FMM	
@@ -296,6 +353,7 @@ int main(int argc, char* argv[]){
 	phi->Copy(phi_0);
   phi->Write2File("results/phi_0_copy",0);
 	phi->SetupFMM(fmm_mat);
+
 	
   // -------------------------------------------------------------------
   // Compute phi using the Born approximation
@@ -310,6 +368,20 @@ int main(int argc, char* argv[]){
 	phi->ScalarMultiply(-1);
   phi->Write2File("results/born_difference",0);
 
+	// Sample phi at the points in src_coord, then apply the transpose
+	// operator.
+	
+	std::vector<double> phi_samples = phi->ReadVals(src_coord);
+	pvfmm::PtFMM_Tree* pt_tree = phi->CreatePtFMMTree(src_coord, phi_samples, kernel_conj);
+
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
+
+	// Insert the values back in
+	phi->Trg2Tree(trg_value);
+	phi->ConjMultiply(phi_0,1);
+	//phi->ScalarMultiply(10000000);
+	phi->Write2File("results/rhs_after_adj",0);
 
   // -------------------------------------------------------------------
   // Set up the linear system
@@ -323,6 +395,8 @@ int main(int argc, char* argv[]){
 	InvMedData invmed_data;
 	invmed_data.temp = temp;
 	invmed_data.phi_0 = phi_0;
+	invmed_data.pt_tree = pt_tree;
+	invmed_data.src_coord = src_coord;
   MatCreateShell(comm,m,n,M,N,&invmed_data,&A);
   MatShellSetOperation(A,MATOP_MULT,(void(*)(void))mult);
 	Vec sol ,rhs;
@@ -334,15 +408,17 @@ int main(int argc, char* argv[]){
   KSP ksp;
 	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp);CHKERRQ(ierr);
   ierr = KSPSetOperators(ksp,A,A,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr);
-  KSPSetType(ksp  ,KSPGMRES);
+  //KSPSetType(ksp  ,KSPGMRES);
+  KSPSetType(ksp  ,KSPCG);
   KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
-  KSPSetTolerances(ksp  ,GMRES_TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
+  KSPSetTolerances(ksp  ,CG_TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
   //KSPGMRESSetRestart(ksp  , MAX_ITER  );
-  KSPGMRESSetRestart(ksp  , 100  );
-	KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization);
+  //KSPGMRESSetRestart(ksp  , 100  );
+	//KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization);
   ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr);
 	ierr = KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL); CHKERRQ(ierr);
-
+	// What type of CG should this be... I think hermitian??
+	ierr = KSPCGSetType(ksp,KSP_CG_SYMMETRIC); CHKERRQ(ierr);
 
 	double time_ksp;
 	int    iter_ksp;
@@ -355,6 +431,10 @@ int main(int argc, char* argv[]){
   MPI_Barrier(comm);
   time_ksp+=omp_get_wtime();
   pvfmm::Profile::Toc();
+
+ 	KSPConvergedReason reason;
+	ierr=KSPGetConvergedReason(ksp,&reason);CHKERRQ(ierr);
+	ierr=PetscPrintf(PETSC_COMM_WORLD,"KSPConvergedReason: %D\n", reason);CHKERRQ(ierr);
 
   // View info about the solver
   KSPView(ksp,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
@@ -369,10 +449,38 @@ int main(int argc, char* argv[]){
   ierr = PetscPrintf(PETSC_COMM_WORLD,"Iterations %D\n",its);CHKERRQ(ierr);
   iter_ksp=its;
 
+
   { // Write output
     vec2tree(sol, phi);
     phi->Write2File("results/sol",0);
   }
+
+
+	// Some checks!!!!
+	Vec eta_vec;
+  VecCreateMPI(comm,n,PETSC_DETERMINE,&eta_vec);
+	tree2vec(eta,eta_vec);
+	phi->RunFMM();
+	phi->Copy_FMMOutput();
+
+	tree2vec(phi,sol);
+	VecAXPY(sol,-1,rhs);
+	PetscReal norm;
+	VecNorm(sol,NORM_2,&norm);
+
+	std::cout << "The norm is: " << norm << std::endl;
+
+
+	eta->SetupFMM(fmm_mat);
+	eta->RunFMM();
+	eta->Copy_FMMOutput();
+	tree2vec(eta,sol);
+	VecAXPY(sol,-1,rhs);
+	VecNorm(sol,NORM_2,&norm);
+
+	std::cout << "The norm is: " << norm << std::endl;
+
+
 
   // Free work space.  All PETSc objects should be destroyed when they
   // are no longer needed.

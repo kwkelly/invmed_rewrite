@@ -1,12 +1,12 @@
 #include "funcs.hpp"
 #include <cmath>
 #include <math.h>
-void eta_fn(double* coord, int n, double* out){ 
+void eta_fn(const  double* coord, int n, double* out){ 
 	double eta_ = 1;
   int dof=2;
 	int COORD_DIM = 3;
   for(int i=0;i<n;i++){
-    double* c=&coord[i*COORD_DIM];
+     const double* c=&coord[i*COORD_DIM];
     {
       double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			r_2 = sqrt(r_2);
@@ -18,12 +18,12 @@ void eta_fn(double* coord, int n, double* out){
 }
 
 
-void pt_sources_fn(double* coord, int n, double* out){ 
+void pt_sources_fn(const double* coord, int n, double* out){ 
   int dof=2;
 	int COORD_DIM = 3;
   double L=500;
   for(int i=0;i<n;i++){
-    double* c=&coord[i*COORD_DIM];
+    const double* c=&coord[i*COORD_DIM];
     {
 			double temp;
       double r_20=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.9)*(c[1]-0.9)+(c[2]-0.5)*(c[2]-0.5);
@@ -42,11 +42,11 @@ void pt_sources_fn(double* coord, int n, double* out){
 }
 
 
-void zero_fn(double* coord, int n, double* out){ 
+void zero_fn(const  double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
-    double* c=&coord[i*COORD_DIM];
+     const double* c=&coord[i*COORD_DIM];
     {
       out[i*dof]=0;
       out[i*dof+1]=0;
@@ -55,11 +55,11 @@ void zero_fn(double* coord, int n, double* out){
 }
 
 
-void one_fn(double* coord, int n, double* out){ 
+void one_fn( const double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
-    double* c=&coord[i*COORD_DIM];
+     const double* c=&coord[i*COORD_DIM];
     {
       out[i*dof]=1;
       out[i*dof+1]=0;
@@ -67,14 +67,95 @@ void one_fn(double* coord, int n, double* out){
   }
 }
 
-void eye_fn(double* coord, int n, double* out){ 
+void eye_fn( const double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
-    double* c=&coord[i*COORD_DIM];
+     const double* c=&coord[i*COORD_DIM];
     {
       out[i*dof]=0;
       out[i*dof+1]=1;
     }
   }
+}
+
+
+void ctr_pt_sol_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 1/(4*M_PI*r)*cos(1*r);
+      if(dof>1) out[i*dof+1]= -1/(4*M_PI*r)*sin(1*r);
+    }
+  }
+
+}
+
+
+void ctr_pt_sol_i_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 1/(4*M_PI*r)*sin(1*r);
+      if(dof>1) out[i*dof+1]= 1/(4*M_PI*r)*cos(1*r);
+    }
+  }
+
+}
+
+
+void ctr_pt_sol_prod_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 1/(16*M_PI*M_PI*r*r)*cos(2*r);
+      if(dof>1) out[i*dof+1]= 1/(16*M_PI*M_PI*r*r)*cos(2*r);
+    }
+  }
+
+}
+
+
+
+void sc_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= sin(r);
+      if(dof>1) out[i*dof+1]= cos(r);
+    }
+  }
+
+}
+
+
+void scc_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= sin(r);
+      if(dof>1) out[i*dof+1]= -cos(r);
+    }
+  }
+
 }

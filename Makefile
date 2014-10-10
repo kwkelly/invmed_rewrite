@@ -29,7 +29,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 $(TARGET_BIN): $(OBJ_FILES)
 	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)   								$^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
 
 ./bin/test : $(OBJDIR)/test.o $(OBJDIR)/funcs.o 
 	-@$(MKDIRS) $(dir $@)

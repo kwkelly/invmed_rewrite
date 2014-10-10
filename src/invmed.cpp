@@ -1,6 +1,7 @@
 #include "invmed_tree.hpp"
 #include <iostream>
 #include <petscksp.h>
+#include <cstdlib>
 #include <profile.hpp>
 #include <kernel.hpp>
 #include "funcs.hpp"
@@ -72,6 +73,48 @@ void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, dou
 const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_kernel_conj_fn>("helm_kernel_conj", 3, std::pair<int,int>(2,2));
 
+std::vector<double> randsph(int n_points, double rad);
+std::vector<double> randunif(int n_points);
+
+std::vector<double> randsph(int n_points, double rad){
+	std::vector<double> src_points;
+	std::vector<double> z;
+	std::vector<double> phi;
+	std::vector<double> theta;
+	double val;
+
+	std::srand(std::time(NULL));
+	for (int i = 0; i < n_points; i++) {
+		val = 2*rad*((double)std::rand()/(double)RAND_MAX) - rad;
+		z.push_back(val);
+		theta.push_back(asin(z[i]/rad));
+		val = 2*M_PI*((double)std::rand()/(double)RAND_MAX);
+		phi.push_back(val);
+		src_points.push_back(rad*cos(theta[i])*cos(phi[i])+.5);
+		src_points.push_back(rad*cos(theta[i])*sin(phi[i])+.5);
+		src_points.push_back(z[i]+.5);
+	}
+
+	return src_points;
+}
+
+std::vector<double> randunif(int n_points){
+	double val;
+	std::vector<double> src_points;
+
+	std::srand(std::time(NULL));
+	for (int i = 0; i < n_points; i++) {
+		val = ((double)std::rand()/(double)RAND_MAX);
+		src_points.push_back(val);
+		val = ((double)std::rand()/(double)RAND_MAX);
+		src_points.push_back(val);
+		val = ((double)std::rand()/(double)RAND_MAX);
+		src_points.push_back(val);
+	}
+
+	return src_points;
+}
+
 #undef __FUNCT__
 #define __FUNCT__ "mult"
 int mult(Mat M, Vec U, Vec Y){
@@ -105,10 +148,10 @@ int mult(Mat M, Vec U, Vec Y){
 //	for(int i=0;i<src_values.size();i++){
 //		std::cout << src_values[i] << std::endl;
 //	}
-	InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
+	//InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
 
 	std::vector<double> trg_value;
-	pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, 0, &src_values);
 
 	// Insert the values back in
 	temp->Trg2Tree(trg_value);
@@ -120,8 +163,8 @@ int mult(Mat M, Vec U, Vec Y){
 	// Regularize
 	tree2vec(temp,Y);
 
-	//PetscScalar alpha = (PetscScalar)1e-10;
-	//ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
+	PetscScalar alpha = (PetscScalar)1e-10;
+	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
 
 	return 0;
 }
@@ -275,28 +318,6 @@ int main(int argc, char* argv[]){
   const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
-	// Set up the positions of the detectors (must be outside the object)
-
-	std::vector<double> src_coord;
-	src_coord.push_back(0.3);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.7);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.3);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.7);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.3);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.7);
-
 	// Define static variables
 	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
 	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
@@ -334,6 +355,19 @@ int main(int argc, char* argv[]){
 
 	// Set up
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	// Get the total number of chebyshev nodes.
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	// total num of nodes (non ghost, leaf);
+	int n_tnodes = (eta->GetNGLNodes()).size();
+	int total_size = n_nodes3*n_tnodes;
+
+	std::vector<double> src_coord;
+	src_coord = randsph(total_size,.12);
+	//src_coord = randunif(total_size);
+	std::cout << "size: " << src_coord.size() << std::endl;
+
 
   FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
@@ -411,7 +445,16 @@ int main(int argc, char* argv[]){
   //KSPSetType(ksp  ,KSPGMRES);
   KSPSetType(ksp  ,KSPCG);
   KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
-  KSPSetTolerances(ksp  ,CG_TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
+	/*
+	 * PetscErrorCode  KSPSetTolerances(KSP ksp,PetscReal rtol,PetscReal abstol,PetscReal dtol,PetscInt maxits)
+	 *
+	 * ksp 	- the Krylov subspace context
+	 * rtol 	- the relative convergence tolerance, relative decrease in the (possibly preconditioned) residual norm
+	 * abstol 	- the absolute convergence tolerance absolute size of the (possibly preconditioned) residual norm
+	 * dtol 	- the divergence tolerance, amount (possibly preconditioned) residual norm can increase before KSPConvergedDefault() concludes that the method is diverging
+	 * maxits 	- maximum number of iterations to use
+	 */
+  KSPSetTolerances(ksp  ,0  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
   //KSPGMRESSetRestart(ksp  , MAX_ITER  );
   //KSPGMRESSetRestart(ksp  , 100  );
 	//KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization);
@@ -456,7 +499,19 @@ int main(int argc, char* argv[]){
   }
 
 
-	// Some checks!!!!
+	Vec eta_vec;
+  VecCreateMPI(comm,n,PETSC_DETERMINE,&eta_vec);
+	tree2vec(eta,eta_vec);
+
+	PetscReal norm;
+	ierr = VecAXPY(eta_vec,-1,sol);CHKERRQ(ierr);
+	ierr = VecNorm(eta_vec,NORM_2,&norm); CHKERRQ(ierr);
+
+	std::cout << "||sol - eta||_2 = " << norm << std::endl;
+
+/*
+	// Some checks!!!! This checks that O(sol) = rhs
+	// approximately.
 	Vec eta_vec;
   VecCreateMPI(comm,n,PETSC_DETERMINE,&eta_vec);
 	tree2vec(eta,eta_vec);
@@ -479,7 +534,7 @@ int main(int argc, char* argv[]){
 	VecNorm(sol,NORM_2,&norm);
 
 	std::cout << "The norm is: " << norm << std::endl;
-
+*/
 
 
   // Free work space.  All PETSc objects should be destroyed when they

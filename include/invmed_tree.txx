@@ -677,7 +677,7 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 		for(int j=0;j<(coords.size())/dim;j++){
 			bool match = 1;
 			for(int k=0;k<dim;k++){
-				if(fabs(coords[j*dim+k]-(sc[0])[k])>.00001){
+				if(fabs(coords[j*dim+k]-(sc[0])[k])>.000000001){
 					match*=0;
 				}
 			}
@@ -686,7 +686,7 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 				//std::cout << "i: " << i << std::endl;
 				for(int k=0;k<data_dof;k++){
 					(sv[0][k]) = values[j*data_dof+k];
-					std::cout << sv[0][k] << std::endl;
+			//		std::cout << sv[0][k] << std::endl;
 				}
 			}
 		}

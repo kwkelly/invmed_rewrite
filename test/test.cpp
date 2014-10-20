@@ -7,183 +7,705 @@
 #include <set>
 //#include "petsc_utils.hpp"
 #include "typedefs.hpp"
-#include "utils.hpp"
+#include "invmed_utils.hpp"
 #include <mortonid.hpp>
 
 
-void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k);
-void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
-void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-//BEGIN COPY FROM UTILS
-struct InvMedData{
-	InvMedTree<FMM_Mat_t>* phi_0;
-	InvMedTree<FMM_Mat_t>* temp;
-};
+// -------------------------------------------------------------------
+// Declarations
+// -------------------------------------------------------------------
+int multiply_test(MPI_Comm &comm);
+int multiply_test2(MPI_Comm &comm);
+int multiply_test3(MPI_Comm &comm);
+int add_test(MPI_Comm &comm);
+int conj_multiply_test(MPI_Comm &comm);
+int copy_test(MPI_Comm &comm);
+int ptfmm_trg2tree_test(MPI_Comm &comm);
+int mult_op_test(MPI_Comm &comm);
 
-int mult(Mat M, Vec U, Vec Y);
+// -------------------------------------------------------------------
+// Definitions
+// -------------------------------------------------------------------
+int multiply_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *gfun = new InvMedTree<FMM_Mat_t>(comm);	
+	gfun->bndry = bndry;
+	gfun->kernel = kernel;
+	gfun->fn = ctr_pt_sol_fn;
+	gfun->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *gfunc = new InvMedTree<FMM_Mat_t>(comm);	
+	gfunc->bndry = bndry;
+	gfunc->kernel = kernel;
+	gfunc->fn = ctr_pt_sol_conj_fn;
+	gfunc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = ctr_pt_sol_conj_prod_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
 
-template <class FMM_Mat_t>
-int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y);
+	//multiply the two, then get their difference
+	gfun->Multiply(gfunc,1);
+	gfun->Add(sol,-1);
 
-template <class FMM_Mat_t>
-int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree);
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
 
-#undef __FUNCT__
-#define __FUNCT__ "mult"
-int mult(Mat M, Vec U, Vec Y){
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	PetscErrorCode ierr;
+	tree2vec(gfun,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32mMultiply test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete gfunc;
+	delete gfun;
+	delete sol;
+
+	return 0;
+}
+
+int multiply_test2(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
+	sc->bndry = bndry;
+	sc->kernel = kernel;
+	sc->fn = sc_fn;
+	sc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *scc = new InvMedTree<FMM_Mat_t>(comm);	
+	scc->bndry = bndry;
+	scc->kernel = kernel;
+	scc->fn = scc_fn;
+	scc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = one_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//multiply the two, then get their difference
+	sc->Multiply(scc,1);
+	sc->Add(sol,-1);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(sc,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete sc;
+	delete scc;
+	delete sol;
+
+	return 0;
+}
+
+int multiply_test3(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *p1 = new InvMedTree<FMM_Mat_t>(comm);	
+	p1->bndry = bndry;
+	p1->kernel = kernel;
+	p1->fn = poly_fn;
+	p1->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *p2 = new InvMedTree<FMM_Mat_t>(comm);	
+	p2->bndry = bndry;
+	p2->kernel = kernel;
+	p2->fn = poly_fn;
+	p2->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);	
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = linear_prod_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//multiply the two, then get their difference
+	p1->Multiply(p2,1);
+	//p1->Multiply(one,1);
+	p1->Add(sol,-1);
+	p1->Write2File("results/shouldbezero",0);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(p1,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete p1;
+	delete p2;
+	delete sol;
+
+	return 0;
+}
+int conj_multiply_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
+	sc->bndry = bndry;
+	sc->kernel = kernel;
+	sc->fn = sc_fn;
+	sc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sc2 = new InvMedTree<FMM_Mat_t>(comm);	
+	sc2->bndry = bndry;
+	sc2->kernel = kernel;
+	sc2->fn = sc_fn;
+	sc2->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = one_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//multiply the two, then get their difference
+	sc->ConjMultiply(sc2,1);
+	sc->Add(sol,-1);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(sc,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete sc;
+	delete sc2;
+	delete sol;
+
+	return 0;
+}
+
+int add_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
+	sc->bndry = bndry;
+	sc->kernel = kernel;
+	sc->fn = sc_fn;
+	sc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *scc = new InvMedTree<FMM_Mat_t>(comm);	
+	scc->bndry = bndry;
+	scc->kernel = kernel;
+	scc->fn = scc_fn;
+	scc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = twosin_fn;
+	sol->f_max = 2;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//multiply the two, then get their difference
+	sc->Add(scc,1);
+	sc->Add(sol,-1);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(sc,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m Addition test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete sc;
+	delete scc;
+	delete sol;
+
+	return 0;
+}
+
+int copy_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
+	sc->bndry = bndry;
+	sc->kernel = kernel;
+	sc->fn = sc_fn;
+	sc->f_max = 1;
+
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = sc_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	InvMedTree<FMM_Mat_t> *sc2 = new InvMedTree<FMM_Mat_t>(comm);	
+	sc2->Copy(sc);
+
+
+
+	//multiply the two, then get their difference
+	sc->Add(sc2,-1);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(sc,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m Copy test passed!\033[0m - accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete sc;
+	delete sc2;
+	delete sol;
+
+	return 0;
+}
+
+int ptfmm_trg2tree_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);	
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = ctr_pt_sol_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	std::vector<double> src_coord;
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+
+	std::vector<double> src_vals = one->ReadVals(src_coord);
+	// test the values it reads.
+	int val_test = 0;
+	if(fabs(src_vals[0] - 1) > 1e-6 || fabs(src_vals[1] - 0) > 1e-6){
+		val_test = 1;
+	}
+
+	// create the particle fmm tree we need
+	pvfmm::PtFMM_Tree* pt_tree = one->CreatePtFMMTree(src_coord, src_vals, kernel);
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
+
+	// Insert the values back in
+	one->Trg2Tree(trg_value);
+	one->Add(sol,-1);
+
+	PetscInt m = sol->m;
+	PetscInt M = sol->M;
+	PetscInt n = sol->n;
+	PetscInt N = sol->N;
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(one,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+	if(val_test){
+		std::cout << "\033[2;31mFAILURE! Wrong value extracted. \033[0m Got: " << src_vals[0] << ", " << src_vals[1] <<". Expected: 1, 0" << std::endl;
+	}
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete one;
+	delete sol;
+	delete pt_tree;
+
+	return 0;
+}
+
+int int_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *test_fn = new InvMedTree<FMM_Mat_t>(comm);	
+	test_fn->bndry = bndry;
+	test_fn->kernel = kernel;
+	test_fn->fn = int_test_fn;
+	test_fn->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = int_test_sol_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+  FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	test_fn->SetupFMM(fmm_mat);
+	test_fn->RunFMM();
+	test_fn->Copy_FMMOutput();
+	test_fn->Write2File("results/after_int",0);
+
+	// Use the center as the point that we can read forom
+	// set up the particle fmm tree
+	// set up the operator
+	PetscInt m = test_fn->m;
+	PetscInt M = test_fn->M;
+	PetscInt n = test_fn->n;
+	PetscInt N = test_fn->N;
+
+	// check the solution...
+	test_fn->Add(sol,-1);
+	test_fn->Write2File("results/should_be_zero",0);
+	sol->Write2File("results/sol",0);
+
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+
+	tree2vec(test_fn,diff_vec);
+	tree2vec(sol,sol_vec);
+
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
+
+
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m Integration test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+
+	delete test_fn;
+	delete sol;
+	delete fmm_mat;
+
+	return 0;
+
+
+
+}
+int mult_op_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	PetscInt ierr;
+
+	InvMedTree<FMM_Mat_t> *ctr_pt = new InvMedTree<FMM_Mat_t>(comm);	
+	ctr_pt->bndry = bndry;
+	ctr_pt->kernel = kernel;
+	ctr_pt->fn = int_test_fn;
+	ctr_pt->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);	
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *phi_0 = new InvMedTree<FMM_Mat_t>(comm);	
+	phi_0->bndry = bndry;
+	phi_0->kernel = kernel;
+	phi_0->fn = one_fn;
+	phi_0->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = ctr_pt_sol_neg_conj_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+  FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	temp->SetupFMM(fmm_mat);
+
+	// Use the center as the point that we can read forom
+	std::vector<double> src_coord;
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	src_coord.push_back(0.5);
+	// set up the particle fmm tree
+	std::vector<double> src_vals = temp->ReadVals(src_coord); // these vals really don't matter. will be reset before use.
+	pvfmm::PtFMM_Tree* pt_tree = temp->CreatePtFMMTree(src_coord, src_vals, kernel_conj);
+	// set up the operator
+	PetscInt m = phi_0->m;
+	PetscInt M = phi_0->M;
+	PetscInt n = phi_0->n;
+	PetscInt N = phi_0->N;
+	Mat A;
 	InvMedData invmed_data;
-	MatShellGetContext(M, &invmed_data);
-	//InvMedTree<FMM_Mat_t>* phi_0 = invmed_data.phi_0;
-	//InvMedTree<FMM_Mat_t>* temp = invmed_data.temp;
-	std::cout << "phi_0 size " << (((invmed_data.phi_0)->GetNodeList()).size()) << std::endl;
+	invmed_data.temp = temp;
+	invmed_data.phi_0 = phi_0;
+	invmed_data.pt_tree = pt_tree;
+	invmed_data.src_coord = src_coord;
+	MatCreateShell(comm,m,n,M,N,&invmed_data,&A);
+	MatShellSetOperation(A,MATOP_MULT,(void(*)(void))mult);
 
-	std::cout << "temp size " << (((invmed_data.temp)->GetNodeList()).size()) << std::endl;
-	const MPI_Comm* comm=invmed_data.phi_0->Comm();
-	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
-	int omp_p=omp_get_max_threads();
-	vec2tree(U,invmed_data.temp);
+	// Set up the input and output vectors. input should be int_test_fn
+	Vec input_vec, output_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&input_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&output_vec); CHKERRQ(ierr);
 
-	invmed_data.temp->Multiply(invmed_data.phi_0,1);
+	tree2vec(ctr_pt,input_vec);
+	MatMult(A,input_vec,output_vec);
+	
+	// check the solution...
+	vec2tree(output_vec,ctr_pt);
+	VecDestroy(&input_vec);
+	VecDestroy(&output_vec);
+	ctr_pt->Add(sol,-1);
+	ctr_pt->Write2File("results/should_be_zero",0);
+	sol->Write2File("results/sol",0);
 
-	// Run FMM ( Compute: G[ \eta * u ] )
-	invmed_data.temp->ClearFMMData();
-	invmed_data.temp->RunFMM();
+	Vec sol_vec, diff_vec;
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
+  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	// Regularize
-	tree2vec(invmed_data.temp,Y);
+	tree2vec(ctr_pt,diff_vec);
+	tree2vec(sol,sol_vec);
 
-	PetscScalar alpha = (PetscScalar).00001;
-	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
+	PetscReal diff_norm;
+	PetscReal sol_norm;
+	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
+	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	return 0;
-}
-		
-#undef __FUNCT__
-#define __FUNCT__ "tree2vec"
-template <class FMM_Mat_t>
-int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y){
-	PetscErrorCode ierr;
-	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
 
-	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
-
-	int omp_p=omp_get_max_threads();
-	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
-
-	{
-		PetscInt Y_size;
-		ierr = VecGetLocalSize(Y, &Y_size);
-		int data_dof=Y_size/(n_coeff3*nlist.size());
-		int SCAL_EXP = 1;
-
-		PetscScalar *Y_ptr;
-		ierr = VecGetArray(Y, &Y_ptr);
-
-		#pragma omp parallel for
-		for(size_t tid=0;tid<omp_p;tid++){
-			size_t i_start=(nlist.size()* tid   )/omp_p;
-			size_t i_end  =(nlist.size()*(tid+1))/omp_p;
-			for(size_t i=i_start;i<i_end;i++){
-				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
-				double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
-
-				size_t Y_offset=i*n_coeff3*data_dof;
-				for(size_t j=0;j<n_coeff3*data_dof;j++) Y_ptr[j+Y_offset]=coeff_vec[j]*s;
-			}
-		}
-		ierr = VecRestoreArray(Y, &Y_ptr);
+	if(diff_norm/sol_norm < 1e-6){
+		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
 	}
 
-	return 0;
-}
+	VecDestroy(&diff_vec);
+	VecDestroy(&sol_vec);
+	MatDestroy(&A);
 
-#undef __FUNCT__
-#define __FUNCT__ "vec2tree"
-template <class FMM_Mat_t>
-int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
-	PetscErrorCode ierr;
-	const MPI_Comm* comm=tree->Comm();
-	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
-
-	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
-
-	int omp_p=omp_get_max_threads();
-	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
-
-	{
-		PetscInt Y_size;
-		ierr = VecGetLocalSize(Y, &Y_size);
-		int data_dof=Y_size/(n_coeff3*nlist.size());
-		int SCAL_EXP = 1;
-
-		const PetscScalar *Y_ptr;
-		ierr = VecGetArrayRead(Y, &Y_ptr);
-
-		#pragma omp parallel for
-		for(size_t tid=0;tid<omp_p;tid++){
-			size_t i_start=(nlist.size()* tid   )/omp_p;
-			size_t i_end  =(nlist.size()*(tid+1))/omp_p;
-			for(size_t i=i_start;i<i_end;i++){
-				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
-				double s=std::pow(2.0,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
-
-				size_t Y_offset=i*n_coeff3*data_dof;
-				for(size_t j=0;j<n_coeff3*data_dof;j++) coeff_vec[j]=PetscRealPart(Y_ptr[j+Y_offset])*s;
-				nlist[i]->DataDOF()=data_dof;
-			}
-		}
-	}
+	delete ctr_pt;
+	delete sol;
+	delete temp;
+	delete phi_0;
+	delete fmm_mat;
 
 	return 0;
+
+
+
 }
-
-
-void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k){
-#ifndef __MIC__
-	pvfmm::Profile::Add_FLOP((long long)trg_cnt*(long long)src_cnt*(24*dof));
-#endif
-	for(int t=0;t<trg_cnt;t++){
-		for(int i=0;i<dof;i++){
-			double p[2]={0,0};
-			for(int s=0;s<src_cnt;s++){
-				double dX_reg=r_trg[3*t ]-r_src[3*s ];
-				double dY_reg=r_trg[3*t+1]-r_src[3*s+1];
-				double dZ_reg=r_trg[3*t+2]-r_src[3*s+2];
-				double R = (dX_reg*dX_reg+dY_reg*dY_reg+dZ_reg*dZ_reg);
-				if (R!=0){
-					R = sqrt(R);
-					double invR=1.0/R;
-					invR = invR/(4*const_pi<double>());
-					double G[2]={cos(k*R)*invR, sin(k*R)*invR};
-					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
-					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
-				}
-			}
-			k_out[(t*dof+i)*2+0] += p[0];
-			k_out[(t*dof+i)*2+1] += p[1];
-		}
-	}
-}
-
-void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
-	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, 1);
-};
-
-void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
-	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -1);
-};
-
-const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
-const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_kernel_conj_fn>("helm_kernel_conj", 3, std::pair<int,int>(2,2));
-
-//END COPY FROM UTILS
 
 int main(int argc, char* argv[]){
-
 	static char help[] = "\n\
 												-eta        <Real>   Inf norm of \\eta\n\
 												-ref_tol    <Real>   Tree refinement tolerance\n\
@@ -191,8 +713,9 @@ int main(int argc, char* argv[]){
 												-max_depth  <Int>    Maximum tree depth\n\
 												-fmm_q      <Int>    Chebyshev polynomial degree\n\
 												-fmm_m      <Int>    Multipole order (+ve even integer)\n\
-												-gmres_tol  <Real>   GMRES residual tolerance\n\
-												-gmres_iter <Int>    GMRES maximum iterations\n\
+												-tol 			  <Real>   GMRES/CG residual tolerance\n\
+												-iter 			<Int>    GMRES/CG maximum iterations\n\
+												-obs				<Int>		 0 for partial, 1 for full\n\
 												";
 	PetscInt  VTK_ORDER=0;
 	PetscInt  INPUT_DOF=2;
@@ -201,13 +724,15 @@ int main(int argc, char* argv[]){
 	PetscBool TREE_ONLY=PETSC_FALSE;
 	PetscInt  MAXDEPTH  =MAX_DEPTH;// Maximum tree depth
 	PetscInt  MINDEPTH   =4;       // Minimum tree depth
-	PetscReal       TOL  =1e-3;    // Tolerance
-	PetscReal GMRES_TOL  =1e-6;    // Fine mesh GMRES tolerance
+	PetscReal   REF_TOL  =1e-3;    // Tolerance
+	//PetscReal GMRES_TOL  =1e-6;   // Fine mesh GMRES tolerance
+	PetscReal 		TOL  =1e-6;    	// Fine mesh GMRES/CG tolerance
 	PetscInt  CHEB_DEG  =14;       // Fine mesh Cheb. order
 	PetscInt MUL_ORDER  =10;       // Fine mesh mult  order
 	PetscInt MAX_ITER  =200;
 	PetscReal f_max=1;
 	PetscReal eta_=1;
+	PetscInt OBS = 1;
 
   PetscErrorCode ierr;
   PetscInitialize(&argc,&argv,0,help);
@@ -223,28 +748,37 @@ int main(int argc, char* argv[]){
   PetscOptionsGetReal(NULL,       "-scal",& SCAL_EXP  ,NULL);
   PetscOptionsGetBool(NULL,   "-periodic",& PERIODIC  ,NULL);
   PetscOptionsGetBool(NULL,       "-tree",& TREE_ONLY ,NULL);
-
   PetscOptionsGetInt (NULL, "-max_depth" ,&MAXDEPTH   ,NULL);
   PetscOptionsGetInt (NULL, "-min_depth" ,&MINDEPTH   ,NULL);
-  PetscOptionsGetReal(NULL,   "-ref_tol" ,&      TOL  ,NULL);
-  PetscOptionsGetReal(NULL, "-gmres_tol" ,&GMRES_TOL  ,NULL);
-
+  PetscOptionsGetReal(NULL,   "-ref_tol" ,&  REF_TOL  ,NULL);
+  PetscOptionsGetReal(NULL, "-tol" ,		  			&TOL  ,NULL);
   PetscOptionsGetInt (NULL,   "-fmm_q"   ,& CHEB_DEG  ,NULL);
   PetscOptionsGetInt (NULL,   "-fmm_m"   ,&MUL_ORDER  ,NULL);
-
-  PetscOptionsGetInt (NULL, "-gmres_iter",& MAX_ITER  ,NULL);
-
+  PetscOptionsGetInt (NULL, "-iter",&       MAX_ITER  ,NULL);
   PetscOptionsGetReal(NULL,       "-eta" ,&    eta_   ,NULL);
+  PetscOptionsGetInt (NULL, "-obs",&             OBS  ,NULL);
 
-	pvfmm::Profile::Enable(true);
+	//pvfmm::Profile::Enable(true);
+
+	// Define some stuff!
+
+
+	// Define static variables
+	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
+	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
+	InvMedTree<FMM_Mat_t>::tol = REF_TOL;
+	InvMedTree<FMM_Mat_t>::mindepth = MINDEPTH;
+	InvMedTree<FMM_Mat_t>::maxdepth = MAXDEPTH;
+	InvMedTree<FMM_Mat_t>::adap = true;
+	InvMedTree<FMM_Mat_t>::dim = 3;
+	InvMedTree<FMM_Mat_t>::data_dof = 2;
+
 	///////////////////////////////////////////////
 	// SETUP
 	//////////////////////////////////////////////
 
 	// Define some stuff!
 	typedef pvfmm::FMM_Node<pvfmm::MPI_Node<double> > MPI_Node_t;
-//	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
-
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
@@ -264,286 +798,20 @@ int main(int argc, char* argv[]){
 
 	// Define new trees
 	
-	InvMedTree<FMM_Mat_t> *zero = new InvMedTree<FMM_Mat_t>(comm);	
-	zero->bndry = bndry;
-	zero->kernel = kernel_conj;
-	zero->fn = zero_fn;
-	zero->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);	
-	one->bndry = bndry;
-	one->kernel = kernel_conj;
-	one->fn = one_fn;
-	one->f_max = 1;
-
-	InvMedTree<FMM_Mat_t> *eye = new InvMedTree<FMM_Mat_t>(comm);	
-	eye->bndry = bndry;
-	eye->kernel = kernel_conj;
-	eye->fn = eye_fn;
-	eye->f_max = 1;
-	
-	InvMedTree<FMM_Mat_t> *pt_sources= new InvMedTree<FMM_Mat_t>(comm);	
-	pt_sources->bndry = bndry;
-	pt_sources->kernel = kernel;
-	pt_sources->fn = pt_sources_fn;
-	pt_sources->f_max = 16;
-
-	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
-	eta->bndry = bndry;
-	eta->kernel = kernel;
-	eta->fn = eta_fn;
-	eta->f_max = 1;
-
-	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
-	sc->bndry = bndry;
-	sc->kernel = kernel;
-	sc->fn = sc_fn;
-	sc->f_max = 1;
-
-	InvMedTree<FMM_Mat_t> *scc = new InvMedTree<FMM_Mat_t>(comm);	
-	scc->bndry = bndry;
-	scc->kernel = kernel;
-	scc->fn = scc_fn;
-	scc->f_max = 1;
-//	InvMedTree<FMM_Mat_t> *ctr_pt_sol = new InvMedTree<FMM_Mat_t>(comm);	
-//	ctr_pt_sol->bndry = bndry;
-//	ctr_pt_sol->kernel = kernel_conj;
-//	ctr_pt_sol->fn = ctr_pt_sol_fn;
-//	ctr_pt_sol->f_max = 1;
-//
-//	InvMedTree<FMM_Mat_t> *ctr_pt_sol_i = new InvMedTree<FMM_Mat_t>(comm);	
-//	ctr_pt_sol_i->bndry = bndry;
-//	ctr_pt_sol_i->kernel = kernel_conj;
-//	ctr_pt_sol_i->fn = ctr_pt_sol_i_fn;
-//	ctr_pt_sol_i->f_max = 1;
-//
-//	InvMedTree<FMM_Mat_t> *ctr_pt_sol_prod = new InvMedTree<FMM_Mat_t>(comm);	
-//	ctr_pt_sol_prod->bndry = bndry;
-//	ctr_pt_sol_prod->kernel = kernel_conj;
-//	ctr_pt_sol_prod->fn = ctr_pt_sol_prod_fn;
-//	ctr_pt_sol_prod->f_max = 1;
-
-
-	// Initialize the trees. We do this all at once so that they have the same
-	// structure so that we may add them.
-	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
-	zero->Write2File("results/zero",0);
-	//eta->Write2File("results/eta",0);
-	one->Write2File("results/one",0);
-	sc->Write2File("results/sc",0);
-	scc->Write2File("results/scc",0);
-	//pt_sources->Write2File("results/pt_sources",0);
-	//ctr_pt_sol->Write2File("results/ctr_pt_sol",0);
-	//ctr_pt_sol_i->Write2File("results/ctr_pt_sol_i",0);
-	//ctr_pt_sol_prod->Write2File("results/ctr_pt_sol_prod",0);
 
 
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
+	add_test(comm);
+	multiply_test(comm);
+	multiply_test2(comm);
+	multiply_test3(comm);
+	conj_multiply_test(comm);
+	copy_test(comm);
+	int_test(comm);
+//	ptfmm_trg2tree_test(comm);
+//	mult_op_test(comm);
 	
-	// Test for particle tree
-/*	
-	{
-		// Here we extract a value from another tree (should give the value 1)
-		// then create a particle fmm tree using as evaluation points the Chebyshev
-		// node points in the InvMedTree. The source point is directly in the middle.
-		// We use here the conjugate of the Helmholtz kernel centered at (.5,.5,.5). 
-		// After evaluating we compare to the analytical solution (just the conjugate Helmholtz
-		// kernel function) and then examine the difference between the two.
-		std::vector<double> src_coord;
-		src_coord.push_back(0.5);
-		src_coord.push_back(0.5);
-		src_coord.push_back(0.5);
-
-		// Has value of one at the center now.
-		std::vector<double> val = one->ReadVals(src_coord);
-		pvfmm::PtFMM_Tree* pt_tree = pt_sources->CreatePtFMMTree(src_coord, val, kernel_conj);
-		std::vector<double> trg_value;
-		pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
-
-		std::cout << "After evaluate" << std::endl;
-		zero->Trg2Tree(trg_value);
-		std::cout << "After trg2tree" << std::endl;
-		zero->Write2File("results/pt_eval",0);
-		std::cout << "After write" << std::endl;
-		// Test the difference
-		zero->Add(ctr_pt_sol,-1);
-		zero->Write2File("results/pt_eval_diff",0);
-		std::cout << "After write diff" << std::endl;
-
-		//  Now we do the same test, but we set the source value to i*1 centered at the middle.
-		val[0] = 0;
-		val[1] = 1;
-		InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,val,pt_tree);
-		pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
-		zero->Trg2Tree(trg_value);
-		zero->Write2File("results/pt_eval_i",0);
-		zero->Add(ctr_pt_sol,-1);
-		zero->Write2File("results/pt_eval_i_diff",0);
-	
-		// Reset the trg value.
-		zero->Trg2Tree(trg_value);
-
-	}
-	*/
-
-	// Test for Multiply, Add, ConjMultiply
-	/*
-	{
-		eye->Add(one,1);
-		eye->Write2File("results/sum",0);
-		eye->Multiply(ctr_pt_sol,1);
-		eye->Write2File("results/times",0);
-		eye->Add(ctr_pt_sol_i,-1);
-		eye->Add(ctr_pt_sol,-1);
-		eye->Write2File("results/diff",0);
-
-	}
-*/
-	// Test for Multiply, Add, ConjMultiply
-	{
-		sc->Multiply(scc,1);
-		sc->Write2File("results/times",0);
-		sc->Add(one,-1);
-		sc->Write2File("results/diff",0);
-
-	}
-	
-	//std::vector<MPI_Node_t*> nlist=pt_tree->GetNodeList();
-	//std::cout << "n_list size" << nlist.size() << std::endl;
-	//std::vector<pvfmm::MortonId> mins=pt_tree->GetMins();
-//	for(int i=0;i<mins.size();i++){
-//		std::cout << mins[i] << std::endl;
-//	}
-//	for(int i=0;i<nlist.size();i++){
-//		pvfmm::Vector<double> *sv = &(nlist[i]->src_value);
-//		pvfmm::Vector<double> *sc = &(nlist[i]->src_coord);
-//		if(sv->Capacity() >0){
-//			std::cout << i << " : " << (sc[0])[0] << std::endl;
-//			std::cout << (nlist[i]->Coord())[0] << std::endl;
-//		}
-//	}
-//	int n_trg = 1;
-
-	//std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
-	//int n_chebnodes3=cheb_node_coord3.size();
-	//int n_octnodes = nlist.size();
-	//int n_trg = n_chebnodes3*n_octnodes;
-//	for(int i=0;i<trg_value.size();i++){
-		//std::cout << trg_value[i] << std::endl;
-//	}
-	
-
-	//delete r_node;
-	
-//	FMM_Mat_t* fmm_mat = new FMM_Mat_t;
-//	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-//	pt_sources->SetupFMM(fmm_mat);
-//	pt_sources->RunFMM();
-//	pt_sources->Copy_FMMOutput();
-//	std::vector<double> src_values = pt_sources->ReadVals(src_coord);
-//	InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
-//	pt_sources->Write2File("results/pt_after_fmm",0);
-
-
-	//pvfmm::Vector<double> srcs = 
-
-	// Need to put the values back into the tree. In this case we will put them into a different tree as part of the test.
-	//
-/*
-	FMM_Mat_t* fmm_mat = new FMM_Mat_t;
-	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-	pt_sources->SetupFMM(fmm_mat);
-	pt_sources->RunFMM();
-	pt_sources->Copy_FMMOutput();
-
-	Vec one_vec;
-	Vec eta_vec;
-  VecCreateMPI(comm,one->m,PETSC_DETERMINE,&one_vec);
-  VecCreateMPI(comm,eta->m,PETSC_DETERMINE,&eta_vec);
-	tree2vec(one, one_vec);
-	tree2vec(eta, eta_vec);
-	//petsc_utils::vec2tree(zero_vec, zero);
-*/
-  // -------------------------------------------------------------------
-  // Set up the linear system
-  // -------------------------------------------------------------------
-	// Set up the operator for CG;
-	/*
-	PetscInt m = pt_sources->m;
-	PetscInt M = pt_sources->M;
-	PetscInt n = pt_sources->n;
-	PetscInt N = pt_sources->N;
-	Mat A;
-	InvMedData invmed_data
-	invmed_data.temp = one;
-	invmed_data.phi_0 = pt_sources;
-	std::cout << "In test.cpp " << (invmed_data.temp->GetNodeList()).size() << std::endl;
-  MatCreateShell(comm,m,n,M,N,&invmed_data,&A);
-  MatShellSetOperation(A,MATOP_MULT,(void(*)(void))mult);
-	//Vec sol ,rhs;
-  //VecCreateMPI(comm,n,PETSC_DETERMINE,&sol);
-  //VecCreateMPI(comm,n,PETSC_DETERMINE,&rhs);
-	//petsc_utils::tree2vec(phi,rhs);
-	//VecView(rhs, PETSC_VIEWER_STDOUT_SELF);
-	
-	std::vector<FMMNode_t*> nlist1 = (invmed_data.phi_0)->GetNodeList();
-	std::cout << "phi_0 size before mult " <<  nlist1.size() << std::endl;
-	std::vector<FMMNode_t*> nlist2 = (invmed_data.temp)->GetNodeList();
-	std::cout << "temp size before mult" << nlist2.size() << std::endl;
-	MatMult(A,one_vec,eta_vec);
-	*/
-/*
-  KSP ksp;
-	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp);CHKERRQ(ierr);
-  ierr = KSPSetOperators(ksp,A,A,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr);
-  KSPSetType(ksp  ,KSPGMRES);
-  KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
-  KSPSetTolerances(ksp  ,GMRES_TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER  );
-  //KSPGMRESSetRestart(ksp  , MAX_ITER  );
-  KSPGMRESSetRestart(ksp  , 100  );
-  ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr);
-
-
-	double time_ksp;
-	int    iter_ksp;
-  // -------------------------------------------------------------------
-  // Solve the linear system
-  // -------------------------------------------------------------------
-	std::cout << "Outside the solve" << std::endl;
-  pvfmm::Profile::Tic("KSPSolve",&comm,true);
-  time_ksp=-omp_get_wtime();
-  ierr = KSPSolve(ksp,one_vec,eta_vec);CHKERRQ(ierr);
-  MPI_Barrier(comm);
-  time_ksp+=omp_get_wtime();
-  pvfmm::Profile::Toc();
-
-  // View info about the solver
-  KSPView(ksp,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
-
-  // -------------------------------------------------------------------
-  // Check solution and clean up
-  // -------------------------------------------------------------------
-
-  // Iterations
-  PetscInt       its;
-  ierr = KSPGetIterationNumber(ksp,&its);CHKERRQ(ierr);
-  ierr = PetscPrintf(PETSC_COMM_WORLD,"Iterations %D\n",its);CHKERRQ(ierr);
-  iter_ksp=its;
-*/
-  { // Write output
-//    vec2tree(eta_vec, eta);
-//    eta->Write2File("results/sol",0);
-  }
-
-  // Free work space.  All PETSc objects should be destroyed when they
-  // are no longer needed.
-  //ierr = KSPDestroy(&ksp);CHKERRQ(ierr);
-  //ierr = VecDestroy(&sol);CHKERRQ(ierr);
-  //ierr = VecDestroy(&rhs);CHKERRQ(ierr);
-//  ierr = MatDestroy(&A);CHKERRQ(ierr);
-
 	return 0;
 }

@@ -1,6 +1,8 @@
 #include "funcs.hpp"
 #include <cmath>
 #include <math.h>
+
+// 0 outside of a sphere of radius 0.1, 0.01 inside that.
 void eta_fn(const  double* coord, int n, double* out){ 
 	double eta_ = 1;
   int dof=2;
@@ -17,7 +19,8 @@ void eta_fn(const  double* coord, int n, double* out){
   }
 }
 
-
+// Using gaussians to approximate pt sources located neat the 
+// edge of the computational domain
 void pt_sources_fn(const double* coord, int n, double* out){ 
   int dof=2;
 	int COORD_DIM = 3;
@@ -41,7 +44,7 @@ void pt_sources_fn(const double* coord, int n, double* out){
   }
 }
 
-
+// 0
 void zero_fn(const  double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
@@ -54,7 +57,7 @@ void zero_fn(const  double* coord, int n, double* out){
   }
 }
 
-
+// 1
 void one_fn( const double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
@@ -67,6 +70,7 @@ void one_fn( const double* coord, int n, double* out){
   }
 }
 
+// i
 void eye_fn( const double* coord, int n, double* out){ 
 	int COORD_DIM = 3;
   int dof=2;
@@ -79,8 +83,56 @@ void eye_fn( const double* coord, int n, double* out){
   }
 }
 
-
+//Solution of integrating the Helmholtz green function against
+//a point source at the center of the computational domain.
 void ctr_pt_sol_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 1/(4*M_PI*r)*cos(1*r);
+      if(dof>1) out[i*dof+1]= 1/(4*M_PI*r)*sin(1*r);
+    }
+  }
+
+}
+
+void ctr_pt_sol_neg_conj_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= -1/(4*M_PI*r)*cos(1*r);
+      if(dof>1) out[i*dof+1]= 1/(4*M_PI*r)*sin(1*r);
+    }
+  }
+
+}
+
+// The above function multiplied by i
+void ctr_pt_sol_i_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= -1/(4*M_PI*r)*sin(1*r);
+      if(dof>1) out[i*dof+1]= 1/(4*M_PI*r)*cos(1*r);
+    }
+  }
+
+}
+
+// conjugate of the function two above
+void ctr_pt_sol_conj_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
@@ -95,23 +147,7 @@ void ctr_pt_sol_fn(const double* coord, int n, double* out){
 
 }
 
-
-void ctr_pt_sol_i_fn(const double* coord, int n, double* out){
-	int COORD_DIM = 3;
-  int dof=2;
-  for(int i=0;i<n;i++){
-    const double* c=&coord[i*COORD_DIM];
-    {
-      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
-			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= 1/(4*M_PI*r)*sin(1*r);
-      if(dof>1) out[i*dof+1]= 1/(4*M_PI*r)*cos(1*r);
-    }
-  }
-
-}
-
-
+// product of ctr_pt_sol_fn and ctr_pt_sol_i_fn
 void ctr_pt_sol_prod_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
   int dof=2;
@@ -127,35 +163,194 @@ void ctr_pt_sol_prod_fn(const double* coord, int n, double* out){
 
 }
 
+// product of ctr_pt_sol_fn and ctr_pt_sol_conj_fn
+void ctr_pt_sol_conj_prod_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 1/(16*M_PI*M_PI*r*r);
+      if(dof>1) out[i*dof+1]= 0;
+    }
+  }
 
+}
 
+// cos + isin
+void cs_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= cos(r);
+      if(dof>1) out[i*dof+1]= sin(r);
+    }
+  }
+
+}
+// sin + icos
 void sc_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
     const double* c=&coord[i*COORD_DIM];
     {
-      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+      double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
 			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= sin(r);
-      if(dof>1) out[i*dof+1]= cos(r);
+      if(dof>1) out[i*dof+0]= sin(r_2);
+      if(dof>1) out[i*dof+1]= cos(r_2);
     }
   }
 
 }
 
-
+//sin - icos
 void scc_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
   int dof=2;
   for(int i=0;i<n;i++){
     const double* c=&coord[i*COORD_DIM];
     {
-      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+      double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+      double r=sqrt(r_2);
 			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= sin(r);
-      if(dof>1) out[i*dof+1]= -cos(r);
+      if(dof>1) out[i*dof+0]= sin(r_2);
+      if(dof>1) out[i*dof+1]= -cos(r_2);
     }
   }
 
+}
+
+
+//2sin
+void twosin_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+  int dof=2;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r= sqrt(r_2);
+			// Assumes that k = 1;
+      if(dof>1) out[i*dof+0]= 2*sin(r_2);
+      if(dof>1) out[i*dof+1]= 0;
+    }
+  }
+
+}
+
+
+// point source at the center
+void ctr_pt_source_fn(const double* coord, int n, double* out){ 
+  int dof=2;
+	int COORD_DIM = 3;
+  double L=500;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+			double temp;
+      double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+      if(dof>1) out[i*dof+0]= sqrt(L/M_PI)*exp(-L*r_2);
+      if(dof>1) out[i*dof+1]=0;
+    }
+  }
+}
+
+
+void int_test_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	double mu=1;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			out[i*dof+0]=((2*a*r_2+3)*2*a*exp(a*r_2)+mu*mu*exp(a*r_2));
+			out[i*dof+1]=0;
+		}
+	}
+}
+
+void int_test_sol_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			out[i*dof+0]=-exp(a*r_2);
+			out[i*dof+1]=0;
+		}
+	}
+}
+
+
+void poly_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
+			out[i*dof+0]= 1 + r_2 + r_2*r_2;
+			//out[i*dof+0]= 1;
+			out[i*dof+1]=0;
+		}
+	}
+}
+
+
+void poly_prod_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
+			out[i*dof+0]= 1 + 2*r_2 + 3*r_2*r_2 + 2*r_2*r_2*r_2 + r_2*r_2*r_2*r_2;
+		//	out[i*dof+0]= 1 ;
+			out[i*dof+1]=0;
+		}
+	}
+}
+
+
+void linear_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof+0]= c[0] + c[1] + c[2];
+			out[i*dof+1]=0;
+		}
+	}
+}
+
+
+void linear_prod_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof+0]= (c[0] + c[1] + c[2])*(c[0] + c[1] + c[2]);
+			out[i*dof+1]=0;
+		}
+	}
 }

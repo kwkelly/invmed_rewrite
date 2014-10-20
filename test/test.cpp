@@ -5,7 +5,6 @@
 #include "funcs.hpp"
 #include <pvfmm.hpp>
 #include <set>
-//#include "petsc_utils.hpp"
 #include "typedefs.hpp"
 #include "invmed_utils.hpp"
 #include <mortonid.hpp>
@@ -79,11 +78,11 @@ int multiply_test(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32mMultiply test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test passed! \033[0m- relative error=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	VecDestroy(&diff_vec);
 	VecDestroy(&sol_vec);
@@ -122,11 +121,16 @@ int multiply_test2(MPI_Comm &comm){
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
+	
+	sc->Write2File("results/sc",0);
+	scc->Write2File("results/scc",0);
+	sol->Write2File("results/sol",0);
 
 	//multiply the two, then get their difference
 	sc->Multiply(scc,1);
+	sc->Write2File("results/product",0);
 	sc->Add(sol,-1);
+	sc->Write2File("results/should_be_zero",0);
 
 	PetscInt m = sol->m;
 	PetscInt M = sol->M;
@@ -145,11 +149,11 @@ int multiply_test2(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -190,7 +194,7 @@ int multiply_test3(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);	
 	sol->bndry = bndry;
 	sol->kernel = kernel;
-	sol->fn = linear_prod_fn;
+	sol->fn = poly_prod_fn;
 	sol->f_max = 1;
 
 	// initialize the trees
@@ -220,11 +224,11 @@ int multiply_test3(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -286,11 +290,11 @@ int conj_multiply_test(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -353,11 +357,11 @@ int add_test(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m Addition test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m Addition test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -418,11 +422,11 @@ int copy_test(MPI_Comm &comm){
 	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m Copy test passed!\033[0m - accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m Copy test passed!\033[0m - relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -466,7 +470,7 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 	std::vector<double> src_vals = one->ReadVals(src_coord);
 	// test the values it reads.
 	int val_test = 0;
-	if(fabs(src_vals[0] - 1) > 1e-6 || fabs(src_vals[1] - 0) > 1e-6){
+	if(fabs(src_vals[0] - 1) > 1e-10 || fabs(src_vals[1] - 0) > 1e-10){
 		val_test = 1;
 	}
 
@@ -500,11 +504,11 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 		std::cout << "\033[2;31mFAILURE! Wrong value extracted. \033[0m Got: " << src_vals[0] << ", " << src_vals[1] <<". Expected: 1, 0" << std::endl;
 	}
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -573,11 +577,11 @@ int int_test(MPI_Comm &comm){
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m Integration test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m Integration test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -588,10 +592,8 @@ int int_test(MPI_Comm &comm){
 	delete fmm_mat;
 
 	return 0;
-
-
-
 }
+
 int mult_op_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
@@ -682,11 +684,11 @@ int mult_op_test(MPI_Comm &comm){
 	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
 
-	if(diff_norm/sol_norm < 1e-6){
-		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+	if(diff_norm/sol_norm < 1e-10){
+		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- accuracy=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
 	}
 
 	VecDestroy(&diff_vec);
@@ -725,8 +727,8 @@ int main(int argc, char* argv[]){
 	PetscInt  MAXDEPTH  =MAX_DEPTH;// Maximum tree depth
 	PetscInt  MINDEPTH   =4;       // Minimum tree depth
 	PetscReal   REF_TOL  =1e-3;    // Tolerance
-	//PetscReal GMRES_TOL  =1e-6;   // Fine mesh GMRES tolerance
-	PetscReal 		TOL  =1e-6;    	// Fine mesh GMRES/CG tolerance
+	//PetscReal GMRES_TOL  =1e-10;   // Fine mesh GMRES tolerance
+	PetscReal 		TOL  =1e-10;    	// Fine mesh GMRES/CG tolerance
 	PetscInt  CHEB_DEG  =14;       // Fine mesh Cheb. order
 	PetscInt MUL_ORDER  =10;       // Fine mesh mult  order
 	PetscInt MAX_ITER  =200;
@@ -803,13 +805,13 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
-	add_test(comm);
-	multiply_test(comm);
+//	add_test(comm);
+//	multiply_test(comm);
 	multiply_test2(comm);
 	multiply_test3(comm);
-	conj_multiply_test(comm);
-	copy_test(comm);
-	int_test(comm);
+//	conj_multiply_test(comm);
+//	copy_test(comm);
+//	int_test(comm);
 //	ptfmm_trg2tree_test(comm);
 //	mult_op_test(comm);
 	

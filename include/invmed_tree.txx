@@ -9,6 +9,7 @@
 #include <vector>
 #include <set>
 #include <iterator>
+#include <iomanip>
 
 template <class FMM_Mat_t>
 int InvMedTree<FMM_Mat_t>::mult_order;
@@ -338,6 +339,8 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 		cheb_node_coord1[i]=cheb_node_coord1[i]*2.0-1.0;
 	}
 
+	double max = 0;
+
 	#pragma omp parallel for
 	for(size_t tid=0;tid<omp_p;tid++){
 		size_t i_start=(nlist1.size()* tid   )/omp_p;
@@ -358,9 +361,7 @@ void InvMedTree<FMM_Mat_t>::Add(InvMedTree* other, double multiplier){
 
 			for(size_t j1=0;j1<data_dof;j1++){
 				for(size_t j0=0;j0<n_nodes3;j0++){
-					//why is this like this?
 					val_vec1[j1*n_nodes3+j0]+=multiplier*(val_vec2[j1*n_nodes3+j0]);
-					//std::cout << val_vec1[j1*n_nodes3+j0] << std::endl;
 				}
 			}
 

@@ -186,7 +186,8 @@ void cs_fn(const double* coord, int n, double* out){
   for(int i=0;i<n;i++){
     const double* c=&coord[i*COORD_DIM];
     {
-      double r=sqrt((c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5));
+      double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
 			// Assumes that k = 1;
       if(dof>1) out[i*dof+0]= cos(r);
       if(dof>1) out[i*dof+1]= sin(r);
@@ -204,8 +205,8 @@ void sc_fn(const double* coord, int n, double* out){
       double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			double r = sqrt(r_2);
 			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= sin(r_2);
-      if(dof>1) out[i*dof+1]= cos(r_2);
+      if(dof>1) out[i*dof+0]= sin(r);
+      if(dof>1) out[i*dof+1]= cos(r);
     }
   }
 
@@ -221,8 +222,8 @@ void scc_fn(const double* coord, int n, double* out){
       double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
       double r=sqrt(r_2);
 			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= sin(r_2);
-      if(dof>1) out[i*dof+1]= -cos(r_2);
+      if(dof>1) out[i*dof+0]= sin(r);
+      if(dof>1) out[i*dof+1]= -cos(r);
     }
   }
 
@@ -239,7 +240,7 @@ void twosin_fn(const double* coord, int n, double* out){
       double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			double r= sqrt(r_2);
 			// Assumes that k = 1;
-      if(dof>1) out[i*dof+0]= 2*sin(r_2);
+      if(dof>1) out[i*dof+0]= 2*sin(r);
       if(dof>1) out[i*dof+1]= 0;
     }
   }

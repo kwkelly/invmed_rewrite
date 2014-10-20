@@ -16,13 +16,19 @@ Modify Makefile as needed.
 
 COMMANDLINE OPTIONS
 -------------------
--eta        <Real>   Inf norm of \eta*0.1
 -ref_tol    <Real>   Tree refinement tolerance
 -min_depth  <Int>    Minimum tree depth
 -max_depth  <Int>    Maximum tree depth
 -fmm_q      <Int>    Chebyshev polynomial degree
 -fmm_m      <Int>    Multipole order (+ve even integer)
--gmres_tol  <Real>   GMRES residual tolerance
--gmres_iter <Int>    GMRES maximum iterations
+-tol 		 	  <Real>   GMRES/CG residual tolerance
+-iter				<Int>    GMRES/CG maximum iterations
+-obs				<0/1>		 0 for partial observations, 1 for full
 
-Example: ./bin/invmed -eta 1 -ref_tol 1e-4 min_depth 3 -max_depth 5 -gmres_tol 1e-6
+Example: ./bin/invmed -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6 -obs 0
+
+To run tests:
+make ./bin/test
+
+./bin/test -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6
+

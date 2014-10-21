@@ -63,6 +63,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	void Trg2Tree(std::vector<double> &trg_value);
 	std::vector<double> ReadVals(std::vector<double> &coord);
 	static void SetSrcValues(const std::vector<double> coords, const std::vector<double> values, pvfmm::PtFMM_Tree* tree);
+  double Norm2();
 
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
 };

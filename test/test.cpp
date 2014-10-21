@@ -16,6 +16,7 @@ typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 // -------------------------------------------------------------------
 // Declarations
 // -------------------------------------------------------------------
+int norm_test(MPI_Comm &comm);
 int multiply_test(MPI_Comm &comm);
 int multiply_test2(MPI_Comm &comm);
 int multiply_test3(MPI_Comm &comm);
@@ -28,12 +29,49 @@ int mult_op_test(MPI_Comm &comm);
 // -------------------------------------------------------------------
 // Definitions
 // -------------------------------------------------------------------
-int multiply_test(MPI_Comm &comm){
+
+int norm_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
-	PetscInt ierr;
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);	
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+	// initialize the tree
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	double norm = one->Norm2();	
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	double n_cubes = (one->GetNGLNodes()).size();
+	double n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	double diff = fabs(norm - sqrt(n_cubes*n_nodes3));
+	std::cout << norm << std::endl;
+	std::cout <<  (one->GetNGLNodes()).size() << std::endl;
+	std::cout <<  (one->GetNGLNodes()).size() << std::endl;
+
+
+
+	if(diff < 1e-10){
+		std::cout << "\033[2;32mNorm test passed! \033[0m- absolute error=" << diff  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Norm test failed! \033[0m- absolute norm=" << diff  << std::endl;
+	}
+	delete one;
+
+	return 0;
+}
+
+
+
+int multiply_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
 	InvMedTree<FMM_Mat_t> *gfun = new InvMedTree<FMM_Mat_t>(comm);	
 	gfun->bndry = bndry;
@@ -61,31 +99,15 @@ int multiply_test(MPI_Comm &comm){
 	gfun->Multiply(gfunc,1);
 	gfun->Add(sol,-1);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = gfun->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	tree2vec(gfun,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test passed! \033[0m- relative error=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test passed! \033[0m- relative error=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete gfunc;
 	delete gfun;
@@ -98,8 +120,6 @@ int multiply_test2(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
 	sc->bndry = bndry;
@@ -132,32 +152,15 @@ int multiply_test2(MPI_Comm &comm){
 	sc->Add(sol,-1);
 	sc->Write2File("results/should_be_zero",0);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	tree2vec(sc,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
-
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete sc;
 	delete scc;
@@ -170,8 +173,6 @@ int multiply_test3(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *p1 = new InvMedTree<FMM_Mat_t>(comm);	
 	p1->bndry = bndry;
@@ -207,32 +208,15 @@ int multiply_test3(MPI_Comm &comm){
 	p1->Add(sol,-1);
 	p1->Write2File("results/shouldbezero",0);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = p1->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	tree2vec(p1,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
-
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete p1;
 	delete p2;
@@ -244,8 +228,6 @@ int conj_multiply_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
 	sc->bndry = bndry;
@@ -273,32 +255,15 @@ int conj_multiply_test(MPI_Comm &comm){
 	sc->ConjMultiply(sc2,1);
 	sc->Add(sol,-1);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
-
-	tree2vec(sc,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete sc;
 	delete sc2;
@@ -311,8 +276,6 @@ int add_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
 	sc->bndry = bndry;
@@ -340,32 +303,15 @@ int add_test(MPI_Comm &comm){
 	sc->Add(scc,1);
 	sc->Add(sol,-1);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	tree2vec(sc,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m Addition test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Addition test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
-
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete sc;
 	delete scc;
@@ -378,8 +324,6 @@ int copy_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);	
 	sc->bndry = bndry;
@@ -400,37 +344,19 @@ int copy_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> *sc2 = new InvMedTree<FMM_Mat_t>(comm);	
 	sc2->Copy(sc);
 
-
-
-	//multiply the two, then get their difference
+	// get difference
 	sc->Add(sc2,-1);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
 
-	tree2vec(sc,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m Copy test passed!\033[0m - relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Copy test passed!\033[0m - relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete sc;
 	delete sc2;
@@ -443,8 +369,6 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);	
 	one->bndry = bndry;
@@ -483,36 +407,20 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 	one->Trg2Tree(trg_value);
 	one->Add(sol,-1);
 
-	PetscInt m = sol->m;
-	PetscInt M = sol->M;
-	PetscInt n = sol->n;
-	PetscInt N = sol->N;
+	double rel_norm = one->Norm2()/sol->Norm2();
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
-
-	tree2vec(one,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
 
 	if(val_test){
 		std::cout << "\033[2;31mFAILURE! Wrong value extracted. \033[0m Got: " << src_vals[0] << ", " << src_vals[1] <<". Expected: 1, 0" << std::endl;
 	}
 
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete one;
 	delete sol;
@@ -525,8 +433,6 @@ int int_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
-	PetscInt ierr;
 
 	InvMedTree<FMM_Mat_t> *test_fn = new InvMedTree<FMM_Mat_t>(comm);	
 	test_fn->bndry = bndry;
@@ -564,28 +470,14 @@ int int_test(MPI_Comm &comm){
 	test_fn->Write2File("results/should_be_zero",0);
 	sol->Write2File("results/sol",0);
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+	double rel_norm = test_fn->Norm2()/sol->Norm2();
 
-	tree2vec(test_fn,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m Integration test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Integration test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
-
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 
 	delete test_fn;
 	delete sol;
@@ -667,32 +559,20 @@ int mult_op_test(MPI_Comm &comm){
 	vec2tree(output_vec,ctr_pt);
 	VecDestroy(&input_vec);
 	VecDestroy(&output_vec);
+
 	ctr_pt->Add(sol,-1);
 	ctr_pt->Write2File("results/should_be_zero",0);
 	sol->Write2File("results/sol",0);
 
-	Vec sol_vec, diff_vec;
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&sol_vec); CHKERRQ(ierr);
-  ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&diff_vec); CHKERRQ(ierr);
+	double rel_norm = ctr_pt->Norm2()/sol->Norm2();
 
-	tree2vec(ctr_pt,diff_vec);
-	tree2vec(sol,sol_vec);
-
-	PetscReal diff_norm;
-	PetscReal sol_norm;
-	ierr = VecNorm(sol_vec,NORM_2,&sol_norm); CHKERRQ(ierr);
-	ierr = VecNorm(diff_vec,NORM_2,&diff_norm); CHKERRQ(ierr);
-
-
-	if(diff_norm/sol_norm < 1e-10){
-		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- relative norm=" << diff_norm/sol_norm  << std::endl;
+		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
 	}
 
-	VecDestroy(&diff_vec);
-	VecDestroy(&sol_vec);
 	MatDestroy(&A);
 
 	delete ctr_pt;
@@ -805,6 +685,7 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
+//	norm_test(comm);
 //	add_test(comm);
 //	multiply_test(comm);
 	multiply_test2(comm);

@@ -771,3 +771,55 @@ void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
 
 	return;
 }
+
+
+
+template <class FMM_Mat_t>
+double InvMedTree<FMM_Mat_t>::Norm2(){
+
+	//  may need to change this
+	int SCAL_EXP = 1;
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm=this->Comm();
+	int omp_p=omp_get_max_threads();
+	//int omp_p = 1;
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+	size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1)/6;
+
+	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
+
+	std::vector<double> cheb_node_coord1=pvfmm::cheb_nodes<double>(cheb_deg, 1);
+	#pragma omp parallel for
+	for(size_t i=0;i<cheb_node_coord1.size();i++){
+		cheb_node_coord1[i]=cheb_node_coord1[i]*2.0-1.0;
+	}
+
+	double out = 0;
+
+	#pragma omp parallel for reduction(+:out)
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist.size()* tid   )/omp_p;
+		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+		pvfmm::Vector<double> coeff_vec(n_coeff3*data_dof);
+		pvfmm::Vector<double> val_vec(n_nodes3*data_dof);
+
+		for(size_t i=i_start;i<i_end;i++){
+			double s=std::pow(2.0,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
+			coeff_vec = nlist[i]->ChebData();
+
+			// val_vec: Evaluate coeff_vec at Chebyshev node points
+			cheb_eval(coeff_vec, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec);
+
+			for(size_t j1=0;j1<data_dof;j1++){
+				for(size_t j0=0;j0<n_nodes3;j0++){
+					out+=(val_vec[j1*n_nodes3+j0])*(val_vec[j1*n_nodes3+j0]);
+				}
+			}
+		}
+	}
+
+	return sqrt(out);
+}

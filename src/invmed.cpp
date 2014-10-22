@@ -28,6 +28,7 @@ int main(int argc, char* argv[]){
 												-tol 			  <Real>   GMRES/CG residual tolerance\n\
 												-iter 			<Int>    GMRES/CG maximum iterations\n\
 												-obs				<Int>		 0 for partial, 1 for full\n\
+												-alpha      <Real>	 Regularization parameter\n\
 												";
 	PetscInt  VTK_ORDER=0;
 	PetscInt  INPUT_DOF=2;
@@ -45,6 +46,7 @@ int main(int argc, char* argv[]){
 	PetscReal f_max=1;
 	PetscReal eta_=1;
 	PetscInt OBS = 1;
+	PetscReal ALPHA = .001;
 
   PetscErrorCode ierr;
   PetscInitialize(&argc,&argv,0,help);
@@ -69,6 +71,7 @@ int main(int argc, char* argv[]){
   PetscOptionsGetInt (NULL, "-iter",&       MAX_ITER  ,NULL);
   PetscOptionsGetReal(NULL,       "-eta" ,&    eta_   ,NULL);
   PetscOptionsGetInt (NULL, "-obs",&             OBS  ,NULL);
+  PetscOptionsGetReal (NULL, "-alpha",&         ALPHA  ,NULL);
 
 	pvfmm::Profile::Enable(true);
 
@@ -128,9 +131,9 @@ int main(int argc, char* argv[]){
 	std::cout << "total_size: " << total_size << std::endl;
 
 	//std::vector<double> src_coord;
-	//src_coord = randsph(total_size,.12);
+	std::vector<double> src_coord = randsph(total_size,.12);
 	//src_coord = randunif(total_size);
-	std::vector<double> src_coord = test_pts();
+	//std::vector<double> src_coord = test_pts();
 	std::cout << "size: " << src_coord.size() << std::endl;
 
 
@@ -195,6 +198,7 @@ int main(int argc, char* argv[]){
 	InvMedData invmed_data;
 	invmed_data.temp = temp;
 	invmed_data.phi_0 = phi_0;
+	invmed_data.alpha = ALPHA;
 	if(OBS == 0){
 		invmed_data.pt_tree = pt_tree;
 		invmed_data.src_coord = src_coord;
@@ -237,7 +241,7 @@ int main(int argc, char* argv[]){
 	
 	// SET CG OR GMRES OPTIONS
 	if(OBS == 0){
-		ierr = KSPCGSetType(ksp,KSP_CG_SYMMETRIC); CHKERRQ(ierr);
+	//	ierr = KSPCGSetType(ksp,KSP_CG_SYMMETRIC); CHKERRQ(ierr);
 	}
 	else{
   	KSPGMRESSetRestart(ksp  , MAX_ITER  );

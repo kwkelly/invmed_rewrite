@@ -394,7 +394,6 @@ std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > InvMedTree<FMM_Mat_t>:
 	return nlist;
 }
 
-
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::InitializeMat(){
 	this->fmm_mat = new FMM_Mat_t;
@@ -612,8 +611,6 @@ void InvMedTree<FMM_Mat_t>::Trg2Tree(std::vector<double> &trg_value){
 	return;
 }
 
-
-
 template <class FMM_Mat_t>
 std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
 
@@ -695,8 +692,6 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 	return;
 }
 
-
-
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
 
@@ -751,7 +746,7 @@ void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
 					//real*real - im*im
 					temp_real=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
 					// real*im + im*real
-					temp_im=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+					temp_im=multiplier*(val_vec2[0*n_nodes3+j0]*val_vec1[1*n_nodes3+j0]-val_vec2[1*n_nodes3+j0]*val_vec1[0*n_nodes3+j0]);
 					val_vec1[0*n_nodes3+j0] = temp_real;
 					val_vec1[1*n_nodes3+j0] = temp_im;
 			//	}
@@ -771,8 +766,6 @@ void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
 
 	return;
 }
-
-
 
 template <class FMM_Mat_t>
 double InvMedTree<FMM_Mat_t>::Norm2(){

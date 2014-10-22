@@ -6,6 +6,7 @@ struct InvMedData{
 	InvMedTree<FMM_Mat_t>* temp;
 	pvfmm::PtFMM_Tree* pt_tree;
 	std::vector<double> src_coord;
+	PetscReal alpha;
 };
 
 #undef __FUNCT__
@@ -199,6 +200,7 @@ int fullmult(Mat M, Vec U, Vec Y){
 	MatShellGetContext(M, &invmed_data);
 	InvMedTree<FMM_Mat_t>* phi_0 = invmed_data->phi_0;
 	InvMedTree<FMM_Mat_t>* temp = invmed_data->temp;
+	PetscReal alpha = invmed_data->alpha;
 
 	const MPI_Comm* comm=invmed_data->phi_0->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -215,7 +217,6 @@ int fullmult(Mat M, Vec U, Vec Y){
 	// Regularize
 	tree2vec(temp,Y);
 
-	PetscScalar alpha = (PetscScalar)1e-10;
 	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
 
 	return 0;
@@ -233,14 +234,16 @@ int mult(Mat M, Vec U, Vec Y){
 	InvMedTree<FMM_Mat_t>* temp = invmed_data->temp;
 	pvfmm::PtFMM_Tree* pt_tree = invmed_data->pt_tree;
 	std::vector<double> src_coord = invmed_data->src_coord;
+	PetscReal alpha = invmed_data->alpha;
 
 	const MPI_Comm* comm=invmed_data->phi_0->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
 	//int omp_p=omp_get_max_threads();
+
 	
 	vec2tree(U,temp);
 
-//	temp->Multiply(phi_0,1);
+	temp->Multiply(phi_0,1);
 
 	// Run FMM ( Compute: G[ \eta * u ] )
 	temp->ClearFMMData();
@@ -250,11 +253,11 @@ int mult(Mat M, Vec U, Vec Y){
 	// Sample at the points in src_coord, then apply the transpose
 	// operator.
 	std::vector<double> src_values = temp->ReadVals(src_coord);
-	std::cout << "vals: " << src_values[0] << ", " << src_values[1] << std::endl;
-	std::cout << "force them to be correct" << std::endl;
+//	std::cout << "vals: " << src_values[0] << ", " << src_values[1] << std::endl;
+//	std::cout << "force them to be correct" << std::endl;
 
-	src_values[0] = -1;
-	src_values[1] = 0;
+//	src_values[0] = -1;
+//	src_values[1] = 0;
 
 //	std::cout << "src_values[i]" << std::endl;
 //	for(int i=0;i<src_values.size();i++){
@@ -269,16 +272,14 @@ int mult(Mat M, Vec U, Vec Y){
 	temp->Trg2Tree(trg_value);
 	
 	// Ptwise multiply by the conjugate of phi_0
-//	temp->ConjMultiply(phi_0,1);
+	temp->ConjMultiply(phi_0,1);
 
 	temp->Write2File("results/aftermult",0);
 
 
-	// Regularize
 	tree2vec(temp,Y);
-	
 
-	PetscScalar alpha = (PetscScalar)0;
+	// Regularize
 	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
 
 	return 0;

@@ -585,6 +585,7 @@ int mult_op_test(MPI_Comm &comm){
 	return 0;
 }
 
+/*
 int mult_op_sym_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
@@ -711,8 +712,8 @@ int mult_op_sym_test(MPI_Comm &comm){
 	return 0;
 
 
-
 }
+*/
 
 int main(int argc, char* argv[]){
 	static char help[] = "\n\

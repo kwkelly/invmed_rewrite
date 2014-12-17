@@ -715,6 +715,141 @@ int mult_op_sym_test(MPI_Comm &comm){
 }
 */
 
+int spectrum_test(MPI_Comm &comm){
+
+  const pvfmm::Kernel<double>* kernel=&helm_kernel;
+  const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+  pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	// Define new trees
+	InvMedTree<FMM_Mat_t> *pt_sources= new InvMedTree<FMM_Mat_t>(comm);	
+	pt_sources->bndry = bndry;
+	pt_sources->kernel = kernel;
+	pt_sources->fn = pt_sources_fn;
+	pt_sources->f_max = sqrt(500/M_PI);
+
+	InvMedTree<FMM_Mat_t> *temp= new InvMedTree<FMM_Mat_t>(comm);	
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);	
+	eta->bndry = bndry;
+	eta->kernel = kernel;
+	eta->fn = eta_fn;
+	eta->f_max = .01;
+
+	InvMedTree<FMM_Mat_t> *phi_0 = new InvMedTree<FMM_Mat_t>(comm);	
+	phi_0->bndry = bndry;
+	phi_0->kernel = kernel;
+	phi_0->fn = pt_sources_fn;
+	phi_0->f_max = sqrt(500/M_PI);
+
+	// Set up
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	// Get the total number of chebyshev nodes.
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	// total num of nodes (non ghost, leaf);
+	int n_tnodes = (eta->GetNGLNodes()).size();
+	int total_size = n_nodes3*n_tnodes;
+	std::cout << "total_size: " << total_size << std::endl;
+
+	std::vector<double> src_coord;
+	src_coord.push_back(.3);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.3);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.3);
+	src_coord.push_back(.7);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.7);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.5);
+	src_coord.push_back(.7);
+	//std::vector<double> src_coord = randsph(6,.12);
+	//src_coord = randunif(total_size);
+	//std::vector<double> src_coord = test_pts();
+	std::cout << "size: " << src_coord.size() << std::endl;
+
+
+  FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	eta->Write2File("results/eta",0);
+	phi_0->Write2File("results/pt_sources",0);
+	// compute phi_0 from the pt_sources
+	phi_0->SetupFMM(fmm_mat);
+	phi_0->RunFMM();
+	phi_0->Copy_FMMOutput();
+  phi_0->Write2File("results/phi_0",0);
+
+	temp->SetupFMM(fmm_mat);
+
+	std::vector<double> src_vals = temp->ReadVals(src_coord); // these vals really don't matter. will be reset before use.
+	pvfmm::PtFMM_Tree* pt_tree = temp->CreatePtFMMTree(src_coord, src_vals, kernel_conj);
+	// set up the operator
+	PetscInt m = phi_0->m;
+	PetscInt M = phi_0->M;
+	PetscInt n = phi_0->n;
+	PetscInt N = phi_0->N;
+
+	for(int j=5;j>=0;j--){
+		std::vector<double> src_values(12);
+		std::fill(src_values.begin(),src_values.end(),0);
+		src_values[j*2] = 1;
+
+		std::vector<double> trg_value;
+		pt_tree->ClearFMMData();
+		pvfmm::PtFMM_Evaluate(pt_tree, trg_value, 0, &src_values);
+		temp->Trg2Tree(trg_value);
+		temp->ConjMultiply(phi_0,1);
+
+		temp->Multiply(phi_0,1);
+
+		// Run FMM ( Compute: G[ \eta * u ] )
+		temp->ClearFMMData();
+		temp->RunFMM();
+		temp->Copy_FMMOutput();
+		std::vector<double> out_vec = temp->ReadVals(src_coord);
+		for(int i=0;i<6;i++){
+			std::cout << out_vec[i*2] << " + " <<  out_vec[i*2+1] << "i"<< std::endl;
+		}
+	}
+
+
+
+/*
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
+	}
+*/
+
+	delete pt_sources;
+	delete eta;
+	delete temp;
+	delete phi_0;
+	delete fmm_mat;
+
+	return 0;
+}
+
+
+
+
+
+
 int main(int argc, char* argv[]){
 	static char help[] = "\n\
 												-eta        <Real>   Inf norm of \\eta\n\
@@ -771,7 +906,7 @@ int main(int argc, char* argv[]){
   PetscOptionsGetInt (NULL, "-obs",&             OBS  ,NULL);
   PetscOptionsGetReal (NULL, "-alpha",&         ALPHA  ,NULL);
 
-	//pvfmm::Profile::Enable(true);
+	pvfmm::Profile::Enable(true);
 
 	// Define some stuff!
 
@@ -819,13 +954,14 @@ int main(int argc, char* argv[]){
 //	norm_test(comm);
 //	add_test(comm);
 //	multiply_test(comm);
-	multiply_test2(comm);
-	multiply_test3(comm);
+//	multiply_test2(comm);
+//	multiply_test3(comm);
 //	conj_multiply_test(comm);
 //	copy_test(comm);
 //	int_test(comm);
-//	ptfmm_trg2tree_test(comm);
+	ptfmm_trg2tree_test(comm);
 	mult_op_test(comm);
+//	spectrum_test(comm);
 	
 	return 0;
 }

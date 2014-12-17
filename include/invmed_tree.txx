@@ -621,15 +621,16 @@ std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
 	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
 	assert(coord.size()%dim == 0);
 	int n_pts = coord.size() / 3;
-	std::vector<double> x;
-	std::vector<double> y;
-	std::vector<double> z;
 	std::vector<double> val(n_pts*data_dof);
 
 	FMMNode_t* r_node=static_cast<FMMNode_t*>(this->RootNode());
 	double *v = val.data();
 
+	#pragma omp parallel for
 	for(int i=0;i<n_pts;i++){
+		std::vector<double> x;
+		std::vector<double> y;
+		std::vector<double> z;
 		x.push_back(coord[i*dim + 0]);
 		y.push_back(coord[i*dim + 1]);
 		z.push_back(coord[i*dim + 2]);

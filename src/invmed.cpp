@@ -131,8 +131,8 @@ int main(int argc, char* argv[]){
 	std::cout << "total_size: " << total_size << std::endl;
 
 	//std::vector<double> src_coord;
-	std::vector<double> src_coord = randsph(total_size,.12);
-	//src_coord = randunif(total_size);
+	std::vector<double> src_coord = randsph(5000,.12);
+	//std::vector<double> src_coord = randunif(500);
 	//std::vector<double> src_coord = test_pts();
 	std::cout << "size: " << src_coord.size() << std::endl;
 

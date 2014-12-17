@@ -153,36 +153,23 @@ std::vector<double> test_pts(){
 	pts.push_back( 0.5000);
 	pts.push_back( 0.5000);
 	pts.push_back( 0.3000);
+
 	pts.push_back( 0.5000);
 	pts.push_back( 0.3000);
 	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.3000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.3000);
-	pts.push_back( 0.5000);
+	
 	pts.push_back( 0.3000);
 	pts.push_back( 0.5000);
 	pts.push_back( 0.5000);
-	pts.push_back( 0.3000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.7000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.7000);
-	pts.push_back( 0.5000);
+	
 	pts.push_back( 0.5000);
 	pts.push_back( 0.5000);
 	pts.push_back( 0.7000);
+	
 	pts.push_back( 0.5000);
 	pts.push_back( 0.7000);
 	pts.push_back( 0.5000);
-	pts.push_back( 0.7000);
-	pts.push_back( 0.5000);
-	pts.push_back( 0.5000);
+	
 	pts.push_back( 0.7000);
 	pts.push_back( 0.5000);
 	pts.push_back( 0.5000);
@@ -264,7 +251,8 @@ int mult(Mat M, Vec U, Vec Y){
 //		std::cout << src_values[i] << std::endl;
 //	}
 	//InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
-
+	
+	pt_tree->ClearFMMData();
 	std::vector<double> trg_value;
 	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, 0, &src_values);
 

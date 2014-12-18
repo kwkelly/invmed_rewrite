@@ -25,10 +25,10 @@ COMMANDLINE OPTIONS
 -iter       <Int>    GMRES/CG maximum iterations
 -obs        <0/1>		 0 for partial observations, 1 for full
 
-Example: ./bin/invmed -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6 -obs 0
+Example: ./bin/invmed -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6 -obs 0 -alpha 1e-6
 
 To run tests:
 make ./bin/test
 
-./bin/test -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6
+./bin/test -ref_tol 1e-5 min_depth 3 -max_depth 5 -tol 1e-6
 

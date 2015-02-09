@@ -30,6 +30,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   pvfmm::BoundaryType bndry;
 	void (*fn)(const  double* coord, int n, double* out);
 	double f_max;
+	bool is_initialized;
 
 	PetscInt m,M,n,N,l,L;
 	static std::set< InvMedTree* > m_instances;
@@ -46,6 +47,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   //typedef typename FMMNode_t::NodeData tree_data;
 
   InvMedTree<FMM_Mat_t>(MPI_Comm c) : pvfmm::FMM_Tree<FMM_Mat_t>(c){
+		this->is_initialized = false;
 		InvMedTree::m_instances.insert(this);
 	};
   virtual ~InvMedTree(){
@@ -57,7 +59,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   void Multiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
   void ConjMultiply(InvMedTree<FMM_Mat_t>* other, double multiplier);
 	void ScalarMultiply(double multiplier);
-  void CreateNewTree();
+  void CreateTree(bool adap);
 	void Copy(InvMedTree<FMM_Mat_t>* other);
 	pvfmm::PtFMM_Tree* CreatePtFMMTree(std::vector<double> &src_coord, std::vector<double> &src_value, const pvfmm::Kernel<double>* kernel);
 	void Trg2Tree(std::vector<double> &trg_value);

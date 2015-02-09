@@ -41,9 +41,9 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 	typename FMMNode_t::NodeData tree_data;
 	//Various parameters.
 
-		int myrank, np;
-		MPI_Comm_rank(*((*(InvMedTree::m_instances.begin()))->Comm()), &myrank);
-		MPI_Comm_size(*((*(InvMedTree::m_instances.begin()))->Comm()),&np);
+	int myrank, np;
+	MPI_Comm_rank(*((*(InvMedTree::m_instances.begin()))->Comm()), &myrank);
+	MPI_Comm_size(*((*(InvMedTree::m_instances.begin()))->Comm()),&np);
 	// Set original source coordinates on a regular grid 
 	// at minepth with one point per octree node.
 	// This gets refined when FMM_Init is called with adaptivity on.
@@ -102,38 +102,57 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 		}
 		tree_data.pt_coord=pt_coord;
 
-/* Not actually sure what this does.
-		{ //Output max tree depth.
-			std::vector<size_t> all_nodes(InvMedTree<FMM_Mat_t>::maxdepth+1,0);
-			std::vector<size_t> leaf_nodes(InvMedTree<FMM_Mat_t>::maxdepth+1,0);
-			std::vector<FMMNode_t*>& nodes=InvMedTree<FMM_Mat_t>::GetNodeList();
-			for(size_t i=0;i<nodes.size();i++){
-				FMMNode_t* n=nodes[i];
-				if(!n->IsGhost()) all_nodes[n->Depth()]++;
-				if(!n->IsGhost() && n->IsLeaf()) leaf_nodes[n->Depth()]++;
-			}
+		/* Not actually sure what this does.
+			 { //Output max tree depth.
+			 std::vector<size_t> all_nodes(InvMedTree<FMM_Mat_t>::maxdepth+1,0);
+			 std::vector<size_t> leaf_nodes(InvMedTree<FMM_Mat_t>::maxdepth+1,0);
+			 std::vector<FMMNode_t*>& nodes=InvMedTree<FMM_Mat_t>::GetNodeList();
+			 for(size_t i=0;i<nodes.size();i++){
+			 FMMNode_t* n=nodes[i];
+			 if(!n->IsGhost()) all_nodes[n->Depth()]++;
+			 if(!n->IsGhost() && n->IsLeaf()) leaf_nodes[n->Depth()]++;
+			 }
 
-			if(!myrank) std::cout<<"All  Nodes: ";
-			for(int i=0;i<InvMedTree<FMM_Mat_t>::maxdepth;i++){
-				int local_size=all_nodes[i];
-				int global_size;
-				MPI_Allreduce(&local_size, &global_size, 1, MPI_INT, MPI_SUM, *((*it)->Comm()));
-				if(global_size==0) InvMedTree<FMM_Mat_t>::maxdepth=i;
-				if(!myrank) std::cout<<global_size<<' ';
-			}
-			if(!myrank) std::cout<<'\n';
+			 if(!myrank) std::cout<<"All  Nodes: ";
+			 for(int i=0;i<InvMedTree<FMM_Mat_t>::maxdepth;i++){
+			 int local_size=all_nodes[i];
+			 int global_size;
+			 MPI_Allreduce(&local_size, &global_size, 1, MPI_INT, MPI_SUM, *((*it)->Comm()));
+			 if(global_size==0) InvMedTree<FMM_Mat_t>::maxdepth=i;
+			 if(!myrank) std::cout<<global_size<<' ';
+			 }
+			 if(!myrank) std::cout<<'\n';
 
-			if(!myrank) std::cout<<"Leaf Nodes: ";
-			for(int i=0;i<InvMedTree<FMM_Mat_t>::maxdepth;i++){
-				int local_size=leaf_nodes[i];
-				int global_size;
-				MPI_Allreduce(&local_size, &global_size, 1, MPI_INT, MPI_SUM, *((*it)->Comm()));
-				if(!myrank) std::cout<<global_size<<' ';
-			}
-			if(!myrank) std::cout<<'\n';
-		}
-*/
-//		std::cout << "here" << std::endl;
+			 if(!myrank) std::cout<<"Leaf Nodes: ";
+			 for(int i=0;i<InvMedTree<FMM_Mat_t>::maxdepth;i++){
+			 int local_size=leaf_nodes[i];
+			 int global_size;
+			 MPI_Allreduce(&local_size, &global_size, 1, MPI_INT, MPI_SUM, *((*it)->Comm()));
+			 if(!myrank) std::cout<<global_size<<' ';
+			 }
+			 if(!myrank) std::cout<<'\n';
+			 }
+			 */
+		//		std::cout << "here" << std::endl;
+
+
+		(*it)->is_initialized = true;
+	}
+
+	// Now we loop through all the trees again, reinitialize them without adaptivity so that 
+	// all of the trees have the structure given be the common adaptively selected coordinates of
+	// them all.
+	InvMedTree<FMM_Mat_t>::adap = false;
+	for (it = InvMedTree::m_instances.begin(); it!=InvMedTree::m_instances.end(); ++it){
+		//Set input function pointer
+		tree_data.input_fn=(*it)->fn;
+		tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*((*it)->f_max);
+
+		//Create Tree and initialize with input data.
+		(*it)->Initialize(&tree_data);
+		(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
+
+
 
 
 		int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -158,20 +177,9 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 			(*it)->l=loc_nodes*(*it)->kernel->ker_dim[0];
 			(*it)->L=glb_nodes*(*it)->kernel->ker_dim[0];
 		}
-	}
 
-	// Now we loop through all the trees again, reinitialize them without adaptivity so that 
-	// all of the trees have the structure given be the common adaptively selected coordinates of
-	// them all.
-	InvMedTree<FMM_Mat_t>::adap = false;
-	for (it = InvMedTree::m_instances.begin(); it!=InvMedTree::m_instances.end(); ++it){
-		//Set input function pointer
-		tree_data.input_fn=(*it)->fn;
-		tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*((*it)->f_max);
 
-		//Create Tree and initialize with input data.
-		(*it)->Initialize(&tree_data);
-		(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
+
 		std::cout << ((*it)->GetNodeList()).size() << std::endl;
 	}
 	return;
@@ -226,18 +234,18 @@ void InvMedTree<FMM_Mat_t>::Multiply(InvMedTree* other, double multiplier){
 			double temp_im;
 			for(size_t j0=0;j0<n_nodes3;j0++){
 				//for(size_t j1=0;j1<data_dof;j1++){
-					//why is this like this?
-					//real*real - im*im
-					temp_real = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
-					//val_vec1[0*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
-					// real*im + im*real
-					temp_im = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
-					//val_vec1[1*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
-					//std::cout << temp_real << std::endl;
-					//std::cout << temp_im << std::endl;
-					val_vec1[0*n_nodes3+j0] = temp_real;
-					val_vec1[1*n_nodes3+j0] = temp_im;
-			//	}
+				//why is this like this?
+				//real*real - im*im
+				temp_real = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+				//val_vec1[0*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]-val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+				// real*im + im*real
+				temp_im = multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+				//val_vec1[1*n_nodes3+j0]=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]);
+				//std::cout << temp_real << std::endl;
+				//std::cout << temp_im << std::endl;
+				val_vec1[0*n_nodes3+j0] = temp_real;
+				val_vec1[1*n_nodes3+j0] = temp_im;
+				//	}
 			}
 
 
@@ -255,7 +263,7 @@ void InvMedTree<FMM_Mat_t>::Multiply(InvMedTree* other, double multiplier){
 	return;
 }
 
-	
+
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::ScalarMultiply(double multiplier){
 
@@ -390,22 +398,141 @@ std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > InvMedTree<FMM_Mat_t>:
 			}
 		}
 	}
-	
+
 	return nlist;
 }
 
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::InitializeMat(){
 	this->fmm_mat = new FMM_Mat_t;
-  this->fmm_mat->Initialize(this->mult_order,this->cheb_deg,*(this->Comm()),this->kernel);
+	this->fmm_mat->Initialize(this->mult_order,this->cheb_deg,*(this->Comm()),this->kernel);
 
 	return;
 }
 
 template <class FMM_Mat_t>
-void CreateNewTree(){
-	// TODO
-	//
+void InvMedTree<FMM_Mat_t>::CreateTree(bool adap){
+	// TODO: Need to add check to see if any trees exist at all right here
+	// Need to check that they have been initialized too... Hmm...
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	typename FMMNode_t::NodeData tree_data;
+	//Various parameters.
+
+	int myrank, np;
+	MPI_Comm_rank(*((*(InvMedTree::m_instances.begin()))->Comm()), &myrank);
+	MPI_Comm_size(*((*(InvMedTree::m_instances.begin()))->Comm()),&np);
+
+	tree_data.max_pts=1; // Points per octant.
+	tree_data.dim=InvMedTree<FMM_Mat_t>::dim;
+	tree_data.max_depth=InvMedTree<FMM_Mat_t>::maxdepth;
+	tree_data.cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	tree_data.data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+
+	// If we want to create this new tree with adaptivity off it is much easier.
+	// We can just grab the starting points from another tree and then use those.
+	typename std::set<InvMedTree<FMM_Mat_t>* >::iterator it; // not sure why this is here...
+	it = InvMedTree::m_instances.begin();
+	while(!(*it)->is_initialized and it != m_instances.end()){
+		// if the first tree has not been initialized, we will have problems,
+		// so check it and if it's not, get the next one.
+		++it;
+	}
+	if(it == m_instances.end()){
+		std::cout << "No initialized trees. Returning" << std::endl;
+		return;
+	}
+
+	std::vector<double> pt_coord;
+	// This loop gets the new coordinates or the centers of all the nodes in the octree,
+	std::vector<FMMNode_t*> nlist=(*it)->GetNodeList();
+	for(size_t i=0;i<nlist.size();i++){
+		if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+			double s=pow(0.5,nlist[i]->Depth()+1);
+			double* c=nlist[i]->Coord();
+			pt_coord.push_back(c[0]+s);
+			pt_coord.push_back(c[1]+s);
+			pt_coord.push_back(c[2]+s);
+		}
+	}
+	tree_data.pt_coord=pt_coord;
+
+
+	//Set input function pointer
+	tree_data.input_fn=this->fn;
+	tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*(this->f_max);
+
+
+	//Create Tree and initialize with input data.
+	this->Initialize(&tree_data);
+	this->InitFMM_Tree(adap,this->bndry); // if adap = false, we are done.
+	if(adap){
+		// If adaptivity is on, we need to get the initial point coords from another tree,
+		// then create the new one with adaptivity on, then loop through all the other trees to
+		// recreate them with adaptivity off to recreate them with the new refined mesh. This 
+		// process is very similar to what we do in the SetupInvmed function.
+		
+		// This loop gets the new coordinates or the centers of all the nodes in the octree that we just 
+		// created with refinement on
+		pt_coord.clear();
+		std::vector<FMMNode_t*> nlist=this->GetNodeList();
+		for(size_t i=0;i<nlist.size();i++){
+			if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+				double s=pow(0.5,nlist[i]->Depth()+1);
+				double* c=nlist[i]->Coord();
+				pt_coord.push_back(c[0]+s);
+				pt_coord.push_back(c[1]+s);
+				pt_coord.push_back(c[2]+s);
+			}
+		}
+		tree_data.pt_coord=pt_coord;
+
+
+		// Now we loop through all the trees again, reinitialize them without adaptivity so that 
+		// all of the trees have the structure given be the common adaptively selected coordinates of
+		// them all.
+		InvMedTree<FMM_Mat_t>::adap = false;
+		for (it = InvMedTree::m_instances.begin(); it!=InvMedTree::m_instances.end(); ++it){
+			//Set input function pointer
+			tree_data.input_fn=(*it)->fn;
+			tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*((*it)->f_max);
+
+			//Create Tree and initialize with input data.
+			(*it)->Initialize(&tree_data);
+			(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
+			std::cout << ((*it)->GetNodeList()).size() << std::endl;
+		}
+
+		// recompute all the info for the total sizes of the trees
+		for (it = InvMedTree::m_instances.begin(); it!=InvMedTree::m_instances.end(); ++it){
+			int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+			size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+			size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+			{ // Get local and global size
+				long long loc_size=0, glb_size=0;
+				long long loc_nodes=0, glb_nodes=0;
+				std::vector<FMMNode_t*> nlist=(*it)->GetNodeList();
+				for(size_t i=0;i<nlist.size();i++){
+					if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+						loc_size+=n_coeff3; //nlist[i]->ChebData().Dim();
+						loc_nodes+=n_nodes3;
+					}
+				}
+				MPI_Allreduce(&loc_size, &glb_size, 1, MPI_LONG_LONG , MPI_SUM, *((*it)->Comm()));
+				MPI_Allreduce(&loc_nodes, &glb_nodes, 1, MPI_LONG_LONG, MPI_SUM, *((*it)->Comm()));
+				(*it)->n=loc_size*(*it)->kernel->ker_dim[0];
+				(*it)->N=glb_size*(*it)->kernel->ker_dim[0];
+				(*it)->m=loc_size*(*it)->kernel->ker_dim[1];
+				(*it)->M=glb_size*(*it)->kernel->ker_dim[1];
+				(*it)->l=loc_nodes*(*it)->kernel->ker_dim[0];
+				(*it)->L=glb_nodes*(*it)->kernel->ker_dim[0];
+			}
+		}
+
+	}
+	// I guess check the size of this???
+	std::cout << (this->GetNodeList()).size() << std::endl;
+
 	return;
 }
 
@@ -419,39 +546,43 @@ void InvMedTree<FMM_Mat_t>::Copy(InvMedTree<FMM_Mat_t>* other){
 	const MPI_Comm* comm=this->Comm();
 
 	typename FMMNode_t::NodeData tree_data;
-	tree_data.max_pts=1; // Points per octant.
-	tree_data.dim=InvMedTree<FMM_Mat_t>::dim;
-	tree_data.max_depth=InvMedTree<FMM_Mat_t>::maxdepth;
-	tree_data.cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
-	tree_data.data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+	if(!(this->is_initialized)){
+		tree_data.max_pts=1; // Points per octant.
+		tree_data.dim=InvMedTree<FMM_Mat_t>::dim;
+		tree_data.max_depth=InvMedTree<FMM_Mat_t>::maxdepth;
+		tree_data.cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+		tree_data.data_dof=InvMedTree<FMM_Mat_t>::data_dof;
 
-	// Copy data over from old tree
-	this->f_max = other->f_max;
-	this->bndry = other->bndry;
-	this->fn    = other->fn;
-	tree_data.input_fn=this->fn;
-	tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*(this->f_max);
+		// Copy data over from old tree
+		this->f_max = other->f_max;
+		this->bndry = other->bndry;
+		this->fn    = other->fn;
+		tree_data.input_fn=this->fn;
+		tree_data.tol=(InvMedTree<FMM_Mat_t>::tol)*(this->f_max);
 
-	// Get point coords of other
-	std::vector<double> pt_coord;
-	pt_coord.clear();
-	std::vector<FMMNode_t*> nlist=other->GetNodeList();
-	for(size_t i=0;i<nlist.size();i++){
-		if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
-			double s=pow(0.5,nlist[i]->Depth()+1);
-			double* c=nlist[i]->Coord();
-			pt_coord.push_back(c[0]+s);
-			pt_coord.push_back(c[1]+s);
-			pt_coord.push_back(c[2]+s);
+		// Get point coords of other
+		std::vector<double> pt_coord;
+		pt_coord.clear();
+		std::vector<FMMNode_t*> nlist=other->GetNodeList();
+		for(size_t i=0;i<nlist.size();i++){
+			if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+				double s=pow(0.5,nlist[i]->Depth()+1);
+				double* c=nlist[i]->Coord();
+				pt_coord.push_back(c[0]+s);
+				pt_coord.push_back(c[1]+s);
+				pt_coord.push_back(c[2]+s);
+			}
 		}
-	}
-	tree_data.pt_coord=pt_coord;
+		tree_data.pt_coord=pt_coord;
 
-	InvMedTree<FMM_Mat_t>::adap = false;
-	//Create Tree and initialize with input data.
-	this->Initialize(&tree_data);
-	this->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,this->bndry);
-	std::cout << (this->GetNodeList()).size() << std::endl;
+		InvMedTree<FMM_Mat_t>::adap = false;
+		//Create Tree and initialize with input data.
+		this->Initialize(&tree_data);
+		this->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,this->bndry);
+		std::cout << (this->GetNodeList()).size() << std::endl;
+
+		this->is_initialized = true;
+	}
 
 
 	//int omp_p=omp_get_max_threads();
@@ -527,7 +658,7 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 	std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
 	//for(int i=0)
 	size_t n_chebnodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
-	
+
 	std::vector<double> trg_coord;
 	std::vector<FMMNode_t*> nlist=this->GetNodeList();
 	for(size_t i=0;i<nlist.size();i++){
@@ -544,16 +675,16 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 	}
 
 	// Now we can create the new octree
-  pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_value, trg_coord, *comm );
+	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_value, trg_coord, *comm );
 	std::cout << "after new tree" << std::endl;
-  // Load matrices.
-  pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	// Load matrices.
+	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
 	std::cout << "after matrices" << std::endl;
-  matrices->Initialize(mult_order, *comm, kernel);
+	matrices->Initialize(mult_order, *comm, kernel);
 	std::cout << "after init" << std::endl;
 
-  // FMM Setup
-  pt_tree->SetupFMM(matrices);
+	// FMM Setup
+	pt_tree->SetupFMM(matrices);
 	std::cout << "after setup" << std::endl;
 
 	return pt_tree;
@@ -573,9 +704,9 @@ void InvMedTree<FMM_Mat_t>::Trg2Tree(std::vector<double> &trg_value){
 
 	int n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 	int n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
-	
+
 	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
-	
+
 	#pragma omp parallel for
 	for(size_t tid=0;tid<omp_p;tid++){
 		size_t i_start=(nlist.size()* tid   )/omp_p;
@@ -584,17 +715,17 @@ void InvMedTree<FMM_Mat_t>::Trg2Tree(std::vector<double> &trg_value){
 		//	std::cout << "val_vec2.Dim() " << val_vec2.Dim() << std::endl;
 		for(size_t i=i_start;i<i_end;i++){
 			for(size_t j0=0;j0<n_nodes3;j0++){
-					// In a given node of the octree, trg_value has the real and imaginary parts
-					// next to each other. (real, imag, real, imag) for each point that we evaluated
-					// at. val_vec needs to have all the real parts, then all the imaginary parts.
-					// (real, real, real, imag, imag imag). Thus we have to reorder on insert.
-					// Get real part and then place it in the first n_nodes part of val_vec
-					val_vec[0*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 0];
+				// In a given node of the octree, trg_value has the real and imaginary parts
+				// next to each other. (real, imag, real, imag) for each point that we evaluated
+				// at. val_vec needs to have all the real parts, then all the imaginary parts.
+				// (real, real, real, imag, imag imag). Thus we have to reorder on insert.
+				// Get real part and then place it in the first n_nodes part of val_vec
+				val_vec[0*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 0];
 
-					//std::cout <<  trg_value[i*n_nodes3*data_dof+j0*data_dof + 0] << std::endl;
-					//std::cout << i*n_nodes3*data_dof+j0*data_dof + 0 << std::endl;
-					// Get the complex part and place those values in the second n_nodes3 part of val_vec
-					val_vec[1*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 1];
+				//std::cout <<  trg_value[i*n_nodes3*data_dof+j0*data_dof + 0] << std::endl;
+				//std::cout << i*n_nodes3*data_dof+j0*data_dof + 0 << std::endl;
+				// Get the complex part and place those values in the second n_nodes3 part of val_vec
+				val_vec[1*n_nodes3+j0] = trg_value[i*n_nodes3*data_dof+j0*data_dof + 1];
 			}
 
 			{ // Compute Chebyshev approx
@@ -656,12 +787,12 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 	std::vector<MPI_Node_t*> src_nodes;
 	std::cout << "n_list size" << nlist.size() << std::endl;
 	//std::vector<pvfmm::MortonId> mins=pt_tree->GetMins();
-//	for(int i=0;i<mins.size();i++){
-//		std::cout << mins[i] << std::endl;
-//	}
+	//	for(int i=0;i<mins.size();i++){
+	//		std::cout << mins[i] << std::endl;
+	//	}
 	for(int i=0;i<nlist.size();i++){
-//		pvfmm::Vector<double> *sv = &(nlist[i]->src_value);
-//		Add the nodes with src_coords to the src_node vector
+		//		pvfmm::Vector<double> *sv = &(nlist[i]->src_value);
+		//		Add the nodes with src_coords to the src_node vector
 		pvfmm::Vector<double> *sc = &(nlist[i]->src_coord);
 		if(sc->Capacity() >0){
 			src_nodes.push_back(nlist[i]);
@@ -685,7 +816,7 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 				//std::cout << "i: " << i << std::endl;
 				for(int k=0;k<data_dof;k++){
 					(sv[0][k]) = values[j*data_dof+k];
-			//		std::cout << sv[0][k] << std::endl;
+					//		std::cout << sv[0][k] << std::endl;
 				}
 			}
 		}
@@ -743,14 +874,14 @@ void InvMedTree<FMM_Mat_t>::ConjMultiply(InvMedTree* other, double multiplier){
 
 			for(size_t j0=0;j0<n_nodes3;j0++){
 				//for(size_t j1=0;j1<data_dof;j1++){
-					//why is this like this?
-					//real*real - im*im
-					temp_real=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
-					// real*im + im*real
-					temp_im=multiplier*(val_vec2[0*n_nodes3+j0]*val_vec1[1*n_nodes3+j0]-val_vec2[1*n_nodes3+j0]*val_vec1[0*n_nodes3+j0]);
-					val_vec1[0*n_nodes3+j0] = temp_real;
-					val_vec1[1*n_nodes3+j0] = temp_im;
-			//	}
+				//why is this like this?
+				//real*real - im*im
+				temp_real=multiplier*(val_vec1[0*n_nodes3+j0]*val_vec2[0*n_nodes3+j0]+val_vec1[1*n_nodes3+j0]*val_vec2[1*n_nodes3+j0]);
+				// real*im + im*real
+				temp_im=multiplier*(val_vec2[0*n_nodes3+j0]*val_vec1[1*n_nodes3+j0]-val_vec2[1*n_nodes3+j0]*val_vec1[0*n_nodes3+j0]);
+				val_vec1[0*n_nodes3+j0] = temp_real;
+				val_vec1[1*n_nodes3+j0] = temp_im;
+				//	}
 			}
 
 
@@ -814,6 +945,7 @@ double InvMedTree<FMM_Mat_t>::Norm2(){
 			}
 		}
 	}
+	out = out/(data_dof*n_nodes3*nlist.size());
 
 	return sqrt(out);
 }

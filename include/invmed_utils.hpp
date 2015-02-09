@@ -1,3 +1,9 @@
+#include <cmath>
+#include <cstdlib>
+#include "petscsys.h"
+
+#pragma once
+
 /////////////////////////////////////////
 // Declarations
 /////////////////////////////////////////
@@ -6,6 +12,13 @@ struct InvMedData{
 	InvMedTree<FMM_Mat_t>* temp;
 	pvfmm::PtFMM_Tree* pt_tree;
 	std::vector<double> src_coord;
+	PetscReal alpha;
+};
+
+
+struct ScatteredData{
+	InvMedTree<FMM_Mat_t>* eta;
+	InvMedTree<FMM_Mat_t>* temp;
 	PetscReal alpha;
 };
 
@@ -18,6 +31,10 @@ int mult(Mat M, Vec U, Vec Y);
 int fullmult(Mat M, Vec U, Vec Y);
 
 #undef __FUNCT__
+#define __FUNCT__ "scattermult"
+int scattermult(Mat M, Vec U, Vec Y);
+
+#undef __FUNCT__
 #define __FUNCT__ "tree2vec"
 template <class FMM_Mat_t>
 int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y);
@@ -26,6 +43,10 @@ int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y);
 #define __FUNCT__ "vec2tree"
 template <class FMM_Mat_t>
 int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree);
+
+#undef __FUNCT__
+#define __FUNCT__ "mgs"
+PetscErrorCode mgs(std::vector<Vec> &vectors);
 
 void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k);
 void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
@@ -116,7 +137,6 @@ std::vector<double> randsph(int n_points, double rad){
 	std::vector<double> theta;
 	double val;
 
-	std::srand(std::time(NULL));
 	for (int i = 0; i < n_points; i++) {
 		val = 2*rad*((double)std::rand()/(double)RAND_MAX) - rad;
 		z.push_back(val);
@@ -135,7 +155,6 @@ std::vector<double> randunif(int n_points){
 	double val;
 	std::vector<double> src_points;
 
-	std::srand(std::time(NULL));
 	for (int i = 0; i < n_points; i++) {
 		val = ((double)std::rand()/(double)RAND_MAX);
 		src_points.push_back(val);
@@ -177,6 +196,36 @@ std::vector<double> test_pts(){
 }
 
 
+std::vector<double> equisph(int n_points, double rad){
+	// Generate n_points equidistributed points on the
+	// surface of a sphere of radius rad
+	// http://www.cmu.edu/biolphys/deserno/pdf/sphere_equi.pdf
+	std::vector<double> points;
+	
+	int n_count = 0;
+	double a = 4*M_PI*rad*rad/n_points;
+	double d = sqrt(a);
+	double M_theta  = round(M_PI/d);
+	double d_theta = M_PI/M_theta;
+	double d_phi = a/d_theta;
+	for(int m=0;m<M_theta;m++){
+		double theta = M_PI*(m+0.5)/M_theta;
+		double M_phi = round(2*M_PI*sin(theta)/d_phi);
+		for(int n=0;n<M_phi;n++){
+			double phi = 2*M_PI*n/M_phi;
+			points.push_back(rad*sin(theta)*cos(phi)+.5);
+			points.push_back(rad*sin(theta)*sin(phi)+.5);
+			points.push_back(rad*cos(theta)+.5);
+			n_count++;
+		}
+	}
+	std::cout << "This many points were created: " << n_count << std::endl;
+	return points;
+			
+}
+
+
+
 #undef __FUNCT__
 #define __FUNCT__ "fullmult"
 int fullmult(Mat M, Vec U, Vec Y){
@@ -210,6 +259,45 @@ int fullmult(Mat M, Vec U, Vec Y){
 }
 
 #undef __FUNCT__
+#define __FUNCT__ "scattermult"
+int scattermult(Mat M, Vec U, Vec Y){
+
+	// This function computes (I+N)u where 
+	// Nu = \int G(x-y)k^2\eta(y)u(y)dy
+
+	PetscErrorCode ierr;
+	// Get context
+	ScatteredData *scattered_data = NULL;
+	MatShellGetContext(M, &scattered_data);
+	InvMedTree<FMM_Mat_t>* eta = scattered_data->eta;
+	InvMedTree<FMM_Mat_t>* temp = scattered_data->temp;
+	PetscReal alpha = scattered_data->alpha;
+
+	const MPI_Comm* comm=scattered_data->eta->Comm();
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	//int omp_p=omp_get_max_threads();
+	temp->ClearFMMData(); // not sure if this one is necessary... but it couldn't hurt, right?
+	vec2tree(U,temp);
+
+	temp->Multiply(eta,1);
+
+	// Run FMM ( Compute: G[ \eta * u ] )
+	temp->ClearFMMData();
+	temp->RunFMM();
+	temp->Copy_FMMOutput();
+
+	// Add u ... no regularization at this time.
+	tree2vec(temp,Y);
+
+	ierr = VecAXPY(Y,1,U);CHKERRQ(ierr);
+
+	return 0;
+}
+
+
+
+
+#undef __FUNCT__
 #define __FUNCT__ "mult"
 int mult(Mat M, Vec U, Vec Y){
 
@@ -225,8 +313,6 @@ int mult(Mat M, Vec U, Vec Y){
 
 	const MPI_Comm* comm=invmed_data->phi_0->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
-	//int omp_p=omp_get_max_threads();
-
 	
 	vec2tree(U,temp);
 
@@ -240,17 +326,6 @@ int mult(Mat M, Vec U, Vec Y){
 	// Sample at the points in src_coord, then apply the transpose
 	// operator.
 	std::vector<double> src_values = temp->ReadVals(src_coord);
-//	std::cout << "vals: " << src_values[0] << ", " << src_values[1] << std::endl;
-//	std::cout << "force them to be correct" << std::endl;
-
-//	src_values[0] = -1;
-//	src_values[1] = 0;
-
-//	std::cout << "src_values[i]" << std::endl;
-//	for(int i=0;i<src_values.size();i++){
-//		std::cout << src_values[i] << std::endl;
-//	}
-	//InvMedTree<FMM_Mat_t>::SetSrcValues(src_coord,src_values,pt_tree);
 	
 	pt_tree->ClearFMMData();
 	std::vector<double> trg_value;
@@ -289,6 +364,7 @@ int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y){
 		PetscInt Y_size;
 		ierr = VecGetLocalSize(Y, &Y_size);
 		int data_dof=Y_size/(n_coeff3*nlist.size());
+		//std::cout << "TREE2VEC HERE " << n_coeff3 << " " << Y_size << " " << nlist.size() << " " << data_dof << " " << n_coeff3 << std::endl;
 		int SCAL_EXP = 1;
 
 		PetscScalar *Y_ptr;
@@ -303,7 +379,10 @@ int tree2vec(InvMedTree<FMM_Mat_t> *tree, Vec& Y){
 				double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
 
 				size_t Y_offset=i*n_coeff3*data_dof;
-				for(size_t j=0;j<n_coeff3*data_dof;j++) Y_ptr[j+Y_offset]=coeff_vec[j]*s;
+				for(size_t j=0;j<n_coeff3*data_dof;j++){
+					Y_ptr[j+Y_offset]=coeff_vec[j]*s;
+		//			std::cout << coeff_vec[j]*s << std::endl;
+				}
 			}
 		}
 		ierr = VecRestoreArray(Y, &Y_ptr);
@@ -351,3 +430,188 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 
 	return 0;
 }
+
+PetscErrorCode mgs(std::vector<Vec> &vectors){
+	// Modified gram schmidt
+	PetscErrorCode ierr;
+	MPI_Comm comm;
+	ierr = PetscObjectGetComm((PetscObject)vectors[0],&comm);CHKERRQ(ierr);
+	Vec q_i;
+	VecDuplicate(vectors[0],&q_i); // should all have the same size and partitioning
+	int n = vectors.size();
+	for(int i=0; i< n; i++){
+		PetscReal r_ii;
+		ierr = VecNorm(vectors[i],NORM_2,&r_ii);CHKERRQ(ierr);
+		ierr = VecCopy(vectors[i],q_i);CHKERRQ(ierr);
+		ierr = VecScale(q_i,1/r_ii);
+		ierr = VecScale(vectors[i],1/r_ii);
+		for(int j=i+1;j<n;j++){
+			PetscScalar r_ij;
+			ierr = VecDot(vectors[j],q_i,&r_ij);CHKERRQ(ierr);
+			ierr = VecAXPY(vectors[j],-r_ij,q_i);
+		}
+	}
+	VecDestroy(&q_i);
+	return ierr;
+}
+
+PetscErrorCode ortho_project(const std::vector<Vec> &ortho_set, Vec &other_vec){
+	// Given an orthogonal set of vectors in ortho_set, project other vector onto
+	// a subspace orthogonal to the one spanned by the ortho_set
+	PetscErrorCode ierr;
+	MPI_Comm comm;
+	ierr = PetscObjectGetComm((PetscObject)ortho_set[0],&comm);CHKERRQ(ierr);
+	int n = ortho_set.size();
+	for(int i=0; i< n; i++){
+		PetscScalar r_ij;
+		ierr = VecDot(other_vec,ortho_set[i],&r_ij);CHKERRQ(ierr);
+		ierr = VecAXPY(other_vec,-r_ij,ortho_set[i]);
+	}
+	//PetscReal r_ii;
+	//ierr = VecNorm(other_vec,NORM_2,&r_ii);CHKERRQ(ierr);
+	//ierr = VecScale(other_vec,1/r_ii);
+	return ierr;
+}
+
+double randn(double mu, double sigma, const PetscRandom &r){
+
+  double U1, U2, W, mult;
+  static double X1, X2;
+  static int call = 0;
+ 
+  if (call == 1)
+    {
+      call = !call;
+      return (mu + sigma * (double) X2);
+    }
+ 
+  do
+    {
+			PetscReal val1;
+			PetscReal val2;
+			PetscRandomGetValueReal(r,&val1);
+			PetscRandomGetValueReal(r,&val2);
+      //U1 = -1 + ((double) val1 / RAND_MAX) * 2;
+			U1 = -1 + val1*2;
+      //U2 = -1 + ((double) val2 / RAND_MAX) * 2;
+			U2 = -1 + val2*2;
+      W = pow (U1, 2) + pow (U2, 2);
+    }
+  while (W >= 1 || W == 0);
+ 
+  mult = sqrt ((-2 * log (W)) / W);
+  X1 = U1 * mult;
+  X2 = U2 * mult;
+ 
+  call = !call;
+ 
+  return (mu + sigma * (double) X1);
+
+}
+
+
+
+#undef __FUNCT__
+#define __FUNCT__ "scatter_born"
+template <class FMM_Mat_t>
+void scatter_born(InvMedTree<FMM_Mat_t>* phi_0, InvMedTree<FMM_Mat_t>* scatterer, InvMedTree<FMM_Mat_t> *phi){
+	// phi_0 is the incident field, phi is the scattered field
+
+
+	std::cout << "does it go here" << std::endl;
+	// -------------------------------------------------------------------
+	// Compute phi using the Born approximation - u = u_0 - \int G(x-y)k^2\eta(y)u_0(y)dy
+	// -------------------------------------------------------------------
+	phi->Multiply(scatterer,-1);  
+	phi->RunFMM();
+	phi->Copy_FMMOutput();
+	phi->Add(phi_0,1);
+	//phi->Write2File("results/phi",0);
+	return;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "scatter_solve"
+template <class FMM_Mat_t>
+PetscErrorCode scatter_solve(InvMedTree<FMM_Mat_t>* phi_0, ScatteredData &scattered_data, InvMedTree<FMM_Mat_t> *phi){
+	// -------------------------------------------------------------------
+	// Compute phi by solving  u = u_0 - \int G(x-y)k^2\eta(y)u(y)dy
+	// for u
+	// -------------------------------------------------------------------
+
+
+	const MPI_Comm* comm_const=phi_0->Comm();
+	MPI_Comm* comm_ = const_cast<MPI_Comm*>(comm_const);
+	MPI_Comm comm = *comm_;
+	PetscErrorCode ierr;
+	PetscInt m = phi_0->m;
+	PetscInt M = phi_0->M;
+	PetscInt n = phi_0->n;
+	PetscInt N = phi_0->N;
+	Mat A;
+	MatCreateShell(comm,m,n,M,N,&scattered_data,&A);
+	MatShellSetOperation(A,MATOP_MULT,(void(*)(void))scattermult);
+	PetscReal TOL = 1e-6; // maybe make this one an input parameter
+	PetscInt MAX_ITER = 100;
+
+	Vec sol ,rhs;
+	VecCreateMPI(comm,n,PETSC_DETERMINE,&sol);
+	VecCreateMPI(comm,n,PETSC_DETERMINE,&rhs);
+	tree2vec(phi_0,rhs);
+	//VecView(rhs, PETSC_VIEWER_STDOUT_SELF);
+
+	KSP ksp;
+	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp);CHKERRQ(ierr);
+	//ierr = KSPSetComputeSingularValues(ksp, PETSC_TRUE); CHKERRQ(ierr);
+	ierr = KSPSetOperators(ksp,A,A,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr);
+
+	KSPSetType(ksp  ,KSPGMRES);
+	//KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
+	/*
+	 * PetscErrorCode  KSPSetTolerances(KSP ksp,PetscReal rtol,PetscReal abstol,PetscReal dtol,PetscInt maxits)
+	 *
+	 * ksp 	- the Krylov subspace context
+	 * rtol 	- the relative convergence tolerance, relative decrease in the (possibly preconditioned) residual norm
+	 * abstol 	- the absolute convergence tolerance absolute size of the (possibly preconditioned) residual norm
+	 * dtol 	- the divergence tolerance, amount (possibly preconditioned) residual norm can increase before KSPConvergedDefault() concludes that the method is diverging
+	 * maxits 	- maximum number of iterations to use
+	 */
+	ierr = KSPSetTolerances(ksp  ,TOL  ,PETSC_DEFAULT,PETSC_DEFAULT,MAX_ITER); CHKERRQ(ierr);
+	// What type of CG should this be... I think hermitian??
+
+	// SET CG OR GMRES OPTIONS
+	ierr = KSPGMRESSetRestart(ksp  , MAX_ITER  ); CHKERRQ(ierr);
+	ierr = KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization); CHKERRQ(ierr);
+	//ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr);
+	ierr = KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL); CHKERRQ(ierr);
+
+	double time_ksp;
+	int    iter_ksp;
+	// -------------------------------------------------------------------
+	// Solve the linear system
+	// -------------------------------------------------------------------
+	pvfmm::Profile::Tic("KSPSolve",&comm,true);
+	time_ksp=-omp_get_wtime();
+	ierr = KSPSolve(ksp,rhs,sol);CHKERRQ(ierr);
+	MPI_Barrier(comm);
+	time_ksp+=omp_get_wtime();
+	pvfmm::Profile::Toc();
+
+	KSPConvergedReason reason;
+	ierr=KSPGetConvergedReason(ksp,&reason);CHKERRQ(ierr);
+	std::cout << reason << std::endl;
+	ierr=PetscPrintf(PETSC_COMM_WORLD,"KSPConvergedReason: %D\n", reason);CHKERRQ(ierr);
+
+	// View info about the solver
+	KSPView(ksp,PETSC_VIEWER_STDOUT_WORLD);CHKERRQ(ierr);
+	vec2tree(sol,phi);
+	phi->Write2File("results/phi",0);
+
+	VecDestroy(&rhs);
+	VecDestroy(&sol);
+	MatDestroy(&A);
+
+	return ierr;
+}
+
+

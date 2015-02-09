@@ -1,3 +1,4 @@
+#include <vector>
 #ifndef FUNCS_HPP
 #define FUNCS_HPP
 
@@ -44,4 +45,11 @@ void poly_prod_fn(const double* coord, int n, double* out);
 void linear_fn(const double* coord, int n, double* out);
 
 void linear_prod_fn(const double* coord, int n, double* out);
+
+void pt_src_sol_fn(const double* coord, int n, double* out, const double* src_coord);
+
+void linear_comb_of_pt_src(const double* coord, int n, double* out, std::vector<double> coeffs, std::vector<double> src_coords);
+
+void k2_fn(const double* coord, int n, double* out);
+
 #endif

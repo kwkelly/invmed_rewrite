@@ -10,6 +10,8 @@
 #include <mortonid.hpp>
 #include <ctime>
 #include <string>
+#include <random>
+#include "El.hpp"
 
 // pt source locations
 std::vector<double> pt_src_locs;
@@ -862,28 +864,149 @@ int mgs_test(MPI_Comm &comm){
 	PetscRandomCreate(comm,&r);
 	PetscRandomSetSeed(r,time(NULL));
 	PetscRandomSetType(r,PETSCRAND);
-	int n =200;
-	int m = 100;
-	std::vector<Vec> vecs;
+	PetscErrorCode ierr;
+	int n = 10;
+	int m = 20;
+	if(n > m){
+		std::cout << "n must be less than m" << std::endl;
+		return 0;
+	}
+	std::vector<Vec> vecs(n);
 
-	/*
-	for(int i=0;i<n;i++){
-		Vec x;
-		VecCreateMPI(comm,m,PETSC_DETERMINE,&x);
-		VecSetRandom(x,r);
-		vecs[i]=x;
+					Mat A;
+	ierr = 	MatCreate(comm,&A); CHKERRQ(ierr);
+	ierr = 	MatSetType(A,MATSEQDENSE);CHKERRQ(ierr);
+	ierr = 	MatSetSizes(A,PETSC_DECIDE,PETSC_DECIDE,m,n); CHKERRQ(ierr); //create an m by n matrix. Let petsc decide local sizes
+	ierr = 	MatSetUp(A);CHKERRQ(ierr);
+	ierr = 	MatSetOption(A,MAT_ROW_ORIENTED,PETSC_FALSE);CHKERRQ(ierr);
+
+	Mat Q;
+	ierr = MatCreate(comm,&Q);CHKERRQ(ierr);
+	ierr = MatSetType(Q,MATSEQDENSE);CHKERRQ(ierr);
+	ierr = MatSetSizes(Q,PETSC_DECIDE,PETSC_DECIDE,m,n);CHKERRQ(ierr);
+	ierr = MatSetUp(Q);CHKERRQ(ierr);
+	ierr = MatSetOption(Q,MAT_ROW_ORIENTED,PETSC_FALSE);CHKERRQ(ierr);
+
+	Mat R;
+	ierr = MatCreate(comm,&R);CHKERRQ(ierr);
+	ierr = MatSetType(R,MATSEQDENSE);CHKERRQ(ierr);
+	ierr = MatSetSizes(R,PETSC_DECIDE,PETSC_DECIDE,n,n);CHKERRQ(ierr);
+	ierr = MatSetUp(R);CHKERRQ(ierr);
+	ierr = MatSetOption(R,MAT_ROW_ORIENTED,PETSC_FALSE);CHKERRQ(ierr);
+
+
+
+	std::vector<int> rows(m);
+	for(int i=0;i<m;i++){
+		rows[i] = i;
 	}
 
-	mgs(vecs);
-
-	PetscScalar val;
 	for(int i=0;i<n;i++){
-		for(int j=i;j<n;j++){
-			VecDot(vecs[i],vecs[j],&val);
-			std::cout << val << std::endl;
+		PetscScalar *a;
+		Vec x;
+		VecCreateMPI(comm,PETSC_DECIDE,m,&x);
+		VecSetRandom(x,r);
+		VecGetArray(x,&a);
+		MatSetValues(A,m,&rows[0],1,&i,a,INSERT_VALUES);
+		VecRestoreArray(x,&a);
+		vecs[i]=x;
+		//if(i == 1){
+			//VecView(x,PETSC_VIEWER_STDOUT_SELF);
+			//std::cout << "============================================" << std::endl;
+		//}
+
+	}
+
+//	MatSetColumnVector(A,vecs[0],1);
+	MatAssemblyBegin(A,MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(A,MAT_FINAL_ASSEMBLY);
+
+	MatView(A,PETSC_VIEWER_STDOUT_SELF);
+	std::cout << "============================================" << std::endl;
+
+	QRData qr_data;
+	qr_data.A = &A;
+	qr_data.Q = &Q;
+	qr_data.R = &R;
+
+	mgs(qr_data);
+
+	MatAssemblyBegin(R,MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(R,MAT_FINAL_ASSEMBLY);
+	MatAssemblyBegin(Q,MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(Q,MAT_FINAL_ASSEMBLY);
+
+	//PetscScalar val;
+	//for(int i=0;i<n;i++){
+	//  for(int j=i;j<n;j++){
+	//    VecDot(vecs[i],vecs[j],&val);
+	//    std::cout << val << std::endl;
+	//  }
+	//}
+	
+	Mat Qtrans;
+	Mat B;
+	ierr = MatTranspose(Q,MAT_INITIAL_MATRIX,&Qtrans);CHKERRQ(ierr);
+	ierr = MatAssemblyBegin(Qtrans,MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
+	ierr = MatAssemblyEnd(Qtrans,MAT_FINAL_ASSEMBLY); CHKERRQ(ierr);
+	MatGetSize(Q,&m,&n);
+	std::cout << m << " : " << n << std::endl;
+	MatGetSize(Qtrans,&m,&n);
+	std::cout << m << " : " << n << std::endl;
+	ierr = MatTransposeMatMult(Q,Q,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&B);CHKERRQ(ierr);
+	ierr = MatAssemblyBegin(B,MAT_FINAL_ASSEMBLY);    CHKERRQ(ierr);
+	ierr = MatAssemblyEnd(B,MAT_FINAL_ASSEMBLY);      CHKERRQ(ierr);
+
+	MatView(B,PETSC_VIEWER_STDOUT_SELF);
+	std::cout << "============================================" << std::endl;
+
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::normal_distribution<double> d(0.0,1.0);
+	El::DistMatrix<double> D;
+	m = 20;
+	n = 10;
+	D.Resize(20,10);
+	for(int i=0;i<m;i++){
+		for(int j=0;j<n;j++){
+			std::cout << i << " : " << j << std::endl;
+			double r2 = randn(0,1,r);
+			std::cout << r2 << std::endl;
+			D.Set(i,j,r2);
 		}
 	}
 
+	El::Print(D,"D");
+	El::DistMatrix<double> Q1;
+	El::DistMatrix<double> R1;
+	El::qr::Explicit(D,R1,El::QRCtrl<double>());
+	El::Print(R1,"R1");
+	El::Print(D,"D");
+
+	El::DistMatrix<double> eye;
+	El::Zeros(eye,n,n);
+	eye.Resize(10,10);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,D,D,1.0,eye);
+	El::Print(eye,"eye");
+
+
+	Vec x;
+	VecCreateMPI(comm,m,PETSC_DETERMINE,&x);
+	VecSetRandom(x,r);
+	std::cout << "============================================" << std::endl;
+	VecView(x,PETSC_VIEWER_STDOUT_SELF);
+
+	Vec2ElMatCol(x,D,4);
+
+	std::cout << "============================================" << std::endl;
+	El::Display(D,"D2");
+
+	std::cout << "============================================" << std::endl;
+	ElMatCol2Vec(x,D,7);
+	VecView(x,PETSC_VIEWER_STDOUT_SELF);
+
+
+	/*
 	std::cout << "ortho_project" << std::endl;
 	Vec x;
 	VecCreateMPI(comm,m,PETSC_DETERMINE,&x);
@@ -899,7 +1022,6 @@ int mgs_test(MPI_Comm &comm){
 	for(int i=0;i<n;i++){
 		VecDestroy(&vecs[i]);
 	}
-*/
 
 	PetscReal norm_val;
 
@@ -930,7 +1052,7 @@ int mgs_test(MPI_Comm &comm){
 		// push back
 		vecs.push_back(x);
 	}
-
+*/
 
 	PetscRandomDestroy(&r);
 
@@ -1132,6 +1254,7 @@ int main(int argc, char* argv[]){
 
   PetscErrorCode ierr;
   PetscInitialize(&argc,&argv,0,help);
+	El::Initialize( argc, argv );
 
   MPI_Comm comm=MPI_COMM_WORLD;
   PetscMPIInt    rank,size;
@@ -1202,8 +1325,9 @@ int main(int argc, char* argv[]){
 //	ptfmm_trg2tree_test(comm);
 //	mult_op_test(comm);
 //	spectrum_test(comm);
-//	mgs_test(comm);
-	compress_incident_test(comm);
+	mgs_test(comm);
+//	compress_incident_test(comm);
+	El::Finalize();
 
 	return 0;
 }

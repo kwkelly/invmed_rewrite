@@ -86,11 +86,11 @@ int main(int argc, char* argv[]){
 	PetscOptionsGetString (NULL, "-scattered", SCATTERED_FIELD ,6, NULL);
 	if(strcmp(SCATTERED_FIELD, "solve") * strcmp(SCATTERED_FIELD, "born") != 0){
 		std::cout << SCATTERED_FIELD << std::endl;
-		std::cout << "Invalid option for computing the scattered field" << std::endl;
+	//	std::cout << "Invalid option for computing the scattered field" << std::endl;
 		return -1;
 	}
 
-	//pvfmm::Profile::Enable(true);
+	pvfmm::Profile::Enable(true);
 
 	// Define some stuff!
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
@@ -118,7 +118,7 @@ int main(int argc, char* argv[]){
 	temp->fn = zero_fn;
 	temp->f_max = 0;
 
-	pt_src_locs = equisph(50,sqrt(2.0)/2);
+	pt_src_locs = equisph(6,sqrt(2.0)/2);
 	//pt_src_locs = randsph(20,1);
 
 	for(int i=0;i<pt_src_locs.size()/3;i++){
@@ -172,7 +172,11 @@ int main(int argc, char* argv[]){
 	//std::vector<double> src_coord = equisph(total_size/20,0.4);
 	//std::vector<double> src_coord1 = equisph(total_size/20,0.3);
 	//src_coord.insert(src_coord.end(),src_coord1.begin(),src_coord1.end());
-	std::vector<double> src_coord = randunif(total_size/5);
+	//std::vector<double> src_coord = randunif(total_size/5);
+	std::vector<double> src_coord = equicube(50);
+	//for(int i =0;i<src_coord.size();++i){
+	//	std::cout << src_coord[i] << std::endl;
+	//}
 	//std::vector<double> src_coord = test_pts();
 	std::cout << "size: " << src_coord.size() << std::endl;
 
@@ -233,6 +237,7 @@ int main(int argc, char* argv[]){
 	PetscInt n = phi_0->n;
 	PetscInt N = phi_0->N;
 	Mat A;
+	Mat I;
 	InvMedData invmed_data;
 	invmed_data.temp = temp;
 	invmed_data.phi_0 = phi_0;
@@ -257,7 +262,7 @@ int main(int argc, char* argv[]){
 	KSP ksp;
 	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp);CHKERRQ(ierr);
 	ierr = KSPSetComputeSingularValues(ksp, PETSC_TRUE); CHKERRQ(ierr);
-	ierr = KSPSetOperators(ksp,A,A,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr);
+	ierr = KSPSetOperators(ksp,A,A);CHKERRQ(ierr);
 
 	if(OBS==0){
 		KSPSetType(ksp  ,KSPCG);
@@ -265,7 +270,7 @@ int main(int argc, char* argv[]){
 	else{
 		KSPSetType(ksp  ,KSPGMRES);
 	}
-	//KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
+	KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
 	/*
 	 * PetscErrorCode  KSPSetTolerances(KSP ksp,PetscReal rtol,PetscReal abstol,PetscReal dtol,PetscInt maxits)
 	 *
@@ -285,8 +290,12 @@ int main(int argc, char* argv[]){
 		ierr = KSPGMRESSetRestart(ksp  , MAX_ITER  ); CHKERRQ(ierr);
 		ierr = KSPGMRESSetOrthogonalization(ksp,KSPGMRESModifiedGramSchmidtOrthogonalization); CHKERRQ(ierr);
 	}
-	ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr);
-	ierr = KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL); CHKERRQ(ierr);
+	//PC pc;
+	//ierr = KSPGetPC(ksp,&pc); CHKERRQ(ierr);
+	//ierr = PCSetFromOptions(pc); CHKERRQ(ierr);
+	//ierr = PCSetType(pc,PCNONE); CHKERRQ(ierr);
+	ierr = KSPSetFromOptions(ksp  );CHKERRQ(ierr); // needs to be after PCSetFromOptions
+	//ierr = KSPMonitorSet(ksp, KSPMonitorDefault, NULL, NULL); CHKERRQ(ierr);
 
 	double time_ksp;
 	int    iter_ksp;

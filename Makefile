@@ -2,6 +2,8 @@
 
 PSC_INC = -I$(PETSC_DIR)/include -I$(PETSC_DIR)/$(PETSC_ARCH)/include 
 PSC_LIB = -L$(PETSC_DIR)/lib -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lpetsc
+EL_INC = -I$(WORK)/packages/elemental/include
+EL_LIB = -L$(WORK)/packages/elemental/lib -lEl
 
 RM = rm -f
 MKDIRS = mkdir -p
@@ -33,11 +35,11 @@ $(TARGET_BIN): $(OBJ_FILES)
 
 ./bin/test : $(OBJDIR)/test.o $(OBJDIR)/funcs.o 
 	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0                 $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0                 $^   $(PSC_LIB) $(EL_LIB) $(LDFLAGS_PVFMM) -o $@
 
 $(OBJDIR)/test.o : test/test.cpp
 	-@$(MKDIRS) $(dir $@)
-	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0                 $(PSC_INC) -I$(INCDIR) -c $< -o $@
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0 -std=c++11               $(PSC_INC) $(EL_INC) -I$(INCDIR) -c $< -o $@
 
 ./bin/new_test : $(OBJDIR)/new_test.o
 	-@$(MKDIRS) $(dir $@)

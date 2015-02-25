@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdlib>
 #include "petscsys.h"
+#include "El.hpp"
 
 #pragma once
 
@@ -20,6 +21,12 @@ struct ScatteredData{
 	InvMedTree<FMM_Mat_t>* eta;
 	InvMedTree<FMM_Mat_t>* temp;
 	PetscReal alpha;
+};
+
+struct QRData{
+	Mat *A;
+	Mat *Q;
+	Mat *R;
 };
 
 #undef __FUNCT__
@@ -46,7 +53,12 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree);
 
 #undef __FUNCT__
 #define __FUNCT__ "mgs"
-PetscErrorCode mgs(std::vector<Vec> &vectors);
+PetscErrorCode mgs(QRData &qr_data);
+
+
+#undef __FUNCT__
+#define __FUNCT__ "MatSetColumnVector"
+PetscErrorCode  MatSetColumnVector(Mat A,Vec yy,PetscInt col);
 
 void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k);
 void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
@@ -55,6 +67,7 @@ void nonsingular_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, d
 
 std::vector<double> randsph(int n_points, double rad);
 std::vector<double> randunif(int n_points);
+std::vector<double> equicube(int n_points);
 
 
 const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
@@ -166,6 +179,26 @@ std::vector<double> randunif(int n_points){
 
 	return src_points;
 }
+
+
+std::vector<double> equicube(int n_points){
+	double val;
+	std::vector<double> src_points;
+	double spacing = 1.0/(n_points + 1);
+
+	for (int i = 0; i < n_points; i++) {
+	for (int j = 0; j < n_points; j++) {
+	for (int k = 0; k < n_points; k++) {
+		src_points.push_back(spacing*(i+1));
+		src_points.push_back(spacing*(j+1));
+		src_points.push_back(spacing*(k+1));
+	}
+	}
+	}
+
+	return src_points;
+}
+
 
 std::vector<double> test_pts(){
 	std::vector<double> pts;
@@ -312,6 +345,7 @@ int mult(Mat M, Vec U, Vec Y){
 	PetscReal alpha = invmed_data->alpha;
 
 	const MPI_Comm* comm=invmed_data->phi_0->Comm();
+	pvfmm::Profile::Tic("Mult",comm,true);
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
 	
 	vec2tree(U,temp);
@@ -319,17 +353,21 @@ int mult(Mat M, Vec U, Vec Y){
 	temp->Multiply(phi_0,1);
 
 	// Run FMM ( Compute: G[ \eta * u ] )
+	pvfmm::Profile::Tic("Volume_FMM",comm,true);
 	temp->ClearFMMData();
 	temp->RunFMM();
 	temp->Copy_FMMOutput();
+	pvfmm::Profile::Toc();
 
 	// Sample at the points in src_coord, then apply the transpose
 	// operator.
 	std::vector<double> src_values = temp->ReadVals(src_coord);
 	
+	pvfmm::Profile::Tic("Particle_FMM",comm,true);
 	pt_tree->ClearFMMData();
 	std::vector<double> trg_value;
 	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, 0, &src_values);
+	pvfmm::Profile::Toc();
 
 	// Insert the values back in
 	temp->Trg2Tree(trg_value);
@@ -344,6 +382,7 @@ int mult(Mat M, Vec U, Vec Y){
 
 	// Regularize
 	ierr = VecAXPY(Y,alpha,U);CHKERRQ(ierr);
+	pvfmm::Profile::Toc();
 
 	return 0;
 }
@@ -431,27 +470,75 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 	return 0;
 }
 
-PetscErrorCode mgs(std::vector<Vec> &vectors){
+#undef __FUNCT__
+#define __FUNCT__ "MatSetColumnVector"
+PetscErrorCode  MatSetColumnVector(Mat A,Vec yy,PetscInt col)
+{
+	PetscScalar       *y;
+	const PetscScalar *v;
+	PetscErrorCode    ierr;
+	PetscInt          i,j,nz,N,Rs,Re,rs,re;
+	const PetscInt    *idx;
+
+	PetscFunctionBegin;
+	if (col < 0) SETERRQ1(PETSC_COMM_SELF,PETSC_ERR_ARG_OUTOFRANGE,"Requested negative column: %D",col);
+	ierr = MatGetSize(A,NULL,&N);CHKERRQ(ierr);
+	if (col >= N) SETERRQ2(PETSC_COMM_SELF,PETSC_ERR_ARG_OUTOFRANGE,"Requested column %D larger than number columns in matrix %D",col,N);
+	ierr = VecGetOwnershipRange(yy,&rs,&re);CHKERRQ(ierr);
+
+	ierr = VecGetArray(yy,&y);CHKERRQ(ierr);
+	for(i=0;i<re -rs;i++){
+		std::cout << i << std::endl;
+		ierr= MatSetValue(A,i+rs,col,y[i], INSERT_VALUES);CHKERRQ(ierr);
+	}
+
+	ierr = VecRestoreArray(yy,&y);CHKERRQ(ierr);
+	PetscFunctionReturn(0);
+}
+
+
+
+PetscErrorCode mgs(QRData &qr_data){
 	// Modified gram schmidt
 	PetscErrorCode ierr;
 	MPI_Comm comm;
-	ierr = PetscObjectGetComm((PetscObject)vectors[0],&comm);CHKERRQ(ierr);
+	ierr = PetscObjectGetComm((PetscObject)*(qr_data.A),&comm);CHKERRQ(ierr);
+	PetscInt m,n;
+	MatGetSize(*(qr_data.A),&m,&n);
+	std::vector<Vec> vectors(n);
+	for(int i=0;i<n;i++){
+		Vec v;
+		VecCreateMPI(comm, PETSC_DECIDE,m,&v);
+		vectors[i] = v;
+		MatGetColumnVector(*(qr_data.A),vectors[i],i);
+	}
+
+	
+	MatAssemblyBegin(*(qr_data.R),MAT_FINAL_ASSEMBLY);
+	MatAssemblyBegin(*(qr_data.Q),MAT_FINAL_ASSEMBLY);
 	Vec q_i;
+	VecCreateMPI(comm,PETSC_DECIDE,m,&q_i);
 	VecDuplicate(vectors[0],&q_i); // should all have the same size and partitioning
-	int n = vectors.size();
 	for(int i=0; i< n; i++){
+		std::cout << i << std::endl;
 		PetscReal r_ii;
 		ierr = VecNorm(vectors[i],NORM_2,&r_ii);CHKERRQ(ierr);
 		ierr = VecCopy(vectors[i],q_i);CHKERRQ(ierr);
 		ierr = VecScale(q_i,1/r_ii);
 		ierr = VecScale(vectors[i],1/r_ii);
+		MatSetValue(*(qr_data.R),i,i,r_ii,INSERT_VALUES);
+		
 		for(int j=i+1;j<n;j++){
 			PetscScalar r_ij;
 			ierr = VecDot(vectors[j],q_i,&r_ij);CHKERRQ(ierr);
+			MatSetValue(*(qr_data.R),i,j,r_ij,INSERT_VALUES);
 			ierr = VecAXPY(vectors[j],-r_ij,q_i);
 		}
+		ierr = MatSetColumnVector(*(qr_data).Q,vectors[i],i);CHKERRQ(ierr);
 	}
 	VecDestroy(&q_i);
+	MatAssemblyEnd(*(qr_data.R),MAT_FINAL_ASSEMBLY);
+	MatAssemblyEnd(*(qr_data.Q),MAT_FINAL_ASSEMBLY);
 	return ierr;
 }
 
@@ -563,7 +650,7 @@ PetscErrorCode scatter_solve(InvMedTree<FMM_Mat_t>* phi_0, ScatteredData &scatte
 	KSP ksp;
 	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp);CHKERRQ(ierr);
 	//ierr = KSPSetComputeSingularValues(ksp, PETSC_TRUE); CHKERRQ(ierr);
-	ierr = KSPSetOperators(ksp,A,A,DIFFERENT_NONZERO_PATTERN);CHKERRQ(ierr);
+	ierr = KSPSetOperators(ksp,A,A);CHKERRQ(ierr);
 
 	KSPSetType(ksp  ,KSPGMRES);
 	//KSPSetNormType(ksp  , KSP_NORM_UNPRECONDITIONED);
@@ -614,4 +701,63 @@ PetscErrorCode scatter_solve(InvMedTree<FMM_Mat_t>* phi_0, ScatteredData &scatte
 	return ierr;
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "vec2elmatcol"
+PetscErrorCode Vec2ElMatCol(const Vec &v, El::DistMatrix<double> &A, const int col){
+	PetscErrorCode ierr;
+	int local_sz;
+	int high;
+	int low;
+	double *vec_arr;
+	ierr = VecGetArray(v,&vec_arr); CHKERRQ(ierr);
+	ierr = VecGetLocalSize(v,&local_sz); CHKERRQ(ierr);
+	ierr = VecGetOwnershipRange(v,&low,&high); CHKERRQ(ierr);
+	#pragma omp parallel for
+	for(int i=0;i<local_sz;i++){
+		A.Set(low+i,col,vec_arr[i]); // global set
+	}
+	ierr = VecRestoreArray(v,&vec_arr);
+	return ierr;
+}
 
+
+#undef __FUNCT__
+#define __FUNCT__ "elmatcol2vec"
+PetscErrorCode ElMatCol2Vec(Vec &v, const El::DistMatrix<double> &A, const int col){
+	PetscErrorCode ierr;
+	int local_sz;
+	int high;
+	int low;
+	double *vec_arr;
+	double val;
+	int gl_sz;
+	ierr = VecGetSize(v,&gl_sz);
+	ierr = VecGetArray(v,&vec_arr); CHKERRQ(ierr);
+	ierr = VecGetLocalSize(v,&local_sz); CHKERRQ(ierr);
+	ierr = VecGetOwnershipRange(v,&low,&high); CHKERRQ(ierr);
+	#pragma omp parallel for
+	for(int i=0;i<local_sz;i++){
+		val = A.Get(low+i,col); //global get
+		std::cout << val << std::endl;
+		vec_arr[i] = val;
+	}
+	ierr = VecRestoreArray(v,&vec_arr);
+	return ierr;
+}
+
+
+#undef __FUNCT__
+#define __FUNCT__ "elmat2vecs"
+PetscErrorCode ElMat2Vecs(std::vector<Vec> &v, const El::DistMatrix<double> &A){
+	PetscErrorCode ierr;
+
+	MPI_Comm comm;
+	int rank;
+	ierr = PetscObjectGetComm((PetscObject)v[0],&comm);CHKERRQ(ierr);
+	MPI_Comm_rank(comm, &rank);
+	int n_vecs = v.size();
+	for(int i=0;i<n_vecs;i++){
+		ElMatCol2Vec(v[i], A, i);
+	}
+	return ierr;
+}

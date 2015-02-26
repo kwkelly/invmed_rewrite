@@ -410,8 +410,22 @@ void k2_fn(const  double* coord, int n, double* out){
 		{
 			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			r_2 = sqrt(r_2);
-			out[i*dof]=cos(3*r_2);
-			out[i*dof+1] = sin(3*r_2); //complex part
+			out[i*dof]=.5*cos(3*r_2);
+			out[i*dof+1] = .5*sin(3*r_2); //complex part
+		}
+	}
+}
+
+void eta_plus_k2_fn(const  double* coord, int n, double* out){
+	int dof=2;
+	int COORD_DIM = 3;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			r_2 = sqrt(r_2);
+			out[i*dof]=.1*cos(3*r_2) + (r_2<0.1?0.01:0.0);
+			out[i*dof+1] = .1*sin(3*r_2); //complex part
 		}
 	}
 }

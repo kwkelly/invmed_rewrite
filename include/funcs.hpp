@@ -52,4 +52,7 @@ void linear_comb_of_pt_src(const double* coord, int n, double* out, std::vector<
 
 void k2_fn(const double* coord, int n, double* out);
 
+
+void eta_plus_k2_fn(const  double* coord, int n, double* out);
+
 #endif

@@ -917,48 +917,7 @@ int mgs_test(MPI_Comm &comm){
 
 	}
 
-//	MatSetColumnVector(A,vecs[0],1);
-	MatAssemblyBegin(A,MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(A,MAT_FINAL_ASSEMBLY);
 
-	MatView(A,PETSC_VIEWER_STDOUT_SELF);
-	std::cout << "============================================" << std::endl;
-
-	QRData qr_data;
-	qr_data.A = &A;
-	qr_data.Q = &Q;
-	qr_data.R = &R;
-
-	mgs(qr_data);
-
-	MatAssemblyBegin(R,MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(R,MAT_FINAL_ASSEMBLY);
-	MatAssemblyBegin(Q,MAT_FINAL_ASSEMBLY);
-	MatAssemblyEnd(Q,MAT_FINAL_ASSEMBLY);
-
-	//PetscScalar val;
-	//for(int i=0;i<n;i++){
-	//  for(int j=i;j<n;j++){
-	//    VecDot(vecs[i],vecs[j],&val);
-	//    std::cout << val << std::endl;
-	//  }
-	//}
-	
-	Mat Qtrans;
-	Mat B;
-	ierr = MatTranspose(Q,MAT_INITIAL_MATRIX,&Qtrans);CHKERRQ(ierr);
-	ierr = MatAssemblyBegin(Qtrans,MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	ierr = MatAssemblyEnd(Qtrans,MAT_FINAL_ASSEMBLY); CHKERRQ(ierr);
-	MatGetSize(Q,&m,&n);
-	std::cout << m << " : " << n << std::endl;
-	MatGetSize(Qtrans,&m,&n);
-	std::cout << m << " : " << n << std::endl;
-	ierr = MatTransposeMatMult(Q,Q,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&B);CHKERRQ(ierr);
-	ierr = MatAssemblyBegin(B,MAT_FINAL_ASSEMBLY);    CHKERRQ(ierr);
-	ierr = MatAssemblyEnd(B,MAT_FINAL_ASSEMBLY);      CHKERRQ(ierr);
-
-	MatView(B,PETSC_VIEWER_STDOUT_SELF);
-	std::cout << "============================================" << std::endl;
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -1004,6 +963,24 @@ int mgs_test(MPI_Comm &comm){
 	std::cout << "============================================" << std::endl;
 	ElMatCol2Vec(x,D,7);
 	VecView(x,PETSC_VIEWER_STDOUT_SELF);
+
+	std::cout << "============================================" << std::endl;
+
+	for(int i=0;i<n;i++){
+		VecView(vecs[i],PETSC_VIEWER_STDOUT_SELF);
+	}
+
+	Vecs2ElMat(vecs,D);
+	El::Display(D,"D");
+
+	El::Scale(2,D);
+
+	ElMat2Vecs(vecs,D);
+
+	for(int i=0;i<n;i++){
+		VecView(vecs[i],PETSC_VIEWER_STDOUT_SELF);
+	}
+	El::Print(D,"D");
 
 
 	/*
@@ -1072,25 +1049,13 @@ int compress_incident_test(MPI_Comm &comm){
 	PetscRandomSetSeed(r,time(NULL));
 	PetscRandomSetType(r,PETSCRAND48);
 
-	/*
-
-	pt_src_locs.push_back(1.5);
-	pt_src_locs.push_back(1.5);
-	pt_src_locs.push_back(1.5);
-	pt_src_locs.push_back(2.0);
-	pt_src_locs.push_back(2.0);
-	pt_src_locs.push_back(2.0);
-	pt_src_locs.push_back(2.5);
-	pt_src_locs.push_back(2.5);
-	pt_src_locs.push_back(2.5);
-	*/
 	int n_pt_srcs = 100;
 	pt_src_locs = equisph(n_pt_srcs,1);
 
 	{
 		coeffs.clear();
 		for(int i=0;i<pt_src_locs.size()/3;i++){
-			coeffs.push_back(1);
+			coeffs.push_back(1); // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
 			//coeffs.push_back(randn(0,1,r));
 			//coeffs.push_back(.5);
 		}
@@ -1101,7 +1066,7 @@ int compress_incident_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> *t1 = new InvMedTree<FMM_Mat_t>(comm);
 	t1->bndry = bndry;
 	t1->kernel = kernel;
-	t1->fn = phi_0_fn;
+	t1->fn = phi_0_fn; // this is the function that computes a linear combination of pt sources located on sphere
 	t1->f_max = 4;
 
 	InvMedTree<FMM_Mat_t> *bg = new InvMedTree<FMM_Mat_t>(comm);
@@ -1110,6 +1075,11 @@ int compress_incident_test(MPI_Comm &comm){
 	bg->fn = k2_fn;
 	bg->f_max = 2;
 
+	InvMedTree<FMM_Mat_t> *eta_k2 = new InvMedTree<FMM_Mat_t>(comm);
+	eta_k2->bndry = bndry;
+	eta_k2->kernel = kernel;
+	eta_k2->fn = eta_plus_k2_fn;
+	eta_k2->f_max = .2;
 
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
 	temp->bndry = bndry;
@@ -1120,13 +1090,17 @@ int compress_incident_test(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
+	bg->Write2File("results/bg",0);
+
 	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
 
 	temp->SetupFMM(fmm_mat);
 
-	std::vector<Vec> vecvec;
-	std::vector<InvMedTree<FMM_Mat_t>*  > treevec;
+	std::vector<Vec> ortho_vec;
+	//std::vector<Vec> orig_vec;
+
+	//std::vector<InvMedTree<FMM_Mat_t>*  > treevec;
 
 	PetscReal norm_val = 1;
 
@@ -1157,7 +1131,6 @@ int compress_incident_test(MPI_Comm &comm){
 			coeffs.clear();
 			for(int i=0;i<pt_src_locs.size()/3;i++){
 				coeffs.push_back(randn(0,1,r));
-				//coeffs.push_back(.5);
 			}
 		}
 
@@ -1167,43 +1140,43 @@ int compress_incident_test(MPI_Comm &comm){
 		t->fn = phi_0_fn;
 		t->f_max = 4;
 		t->CreateTree(false);
-		t->Write2File("results/t",0);
+		//t->Write2File("results/t",0);
 
-		temp->Copy(t);
-		std::cout << "test3" << std::endl;
+		//temp->Copy(t);
 
-		temp->Multiply(bg,-1);
-		temp->RunFMM();
-		std::cout << "test4" << std::endl;
-		temp->Copy_FMMOutput();
-		std::cout << "test5" << std::endl;
-		temp->Add(t,1);
-		std::cout << "test6" << std::endl;
-		t->Copy(temp);
-		std::cout << "test2" << std::endl;
-		t->Write2File("results/tthing",0);
+		//temp->Multiply(bg,1);
+		//temp->RunFMM();
+		//temp->Copy_FMMOutput();
+		//temp->Add(t,1);
+		//t->Copy(temp);
+		//t->Write2File("results/tthing",0);
 
 		// create vector
 		{
 		Vec t2_vec;
+		//Vec orig;
 		VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
+		//VecDuplicate(t2_vec,&orig);
 		tree2vec(t,t2_vec);
+		//VecCopy(t2_vec,orig); // now that we have the copy we can mess with the old one;
+		//orig_vec.push_back(orig);
 		//VecView(t2_vec,	PETSC_VIEWER_STDOUT_WORLD);
 		// Normalize it
 		VecNorm(t2_vec,NORM_2,&norm_val);
 		VecScale(t2_vec,1/norm_val);
 		// project it
-		if(treevec.size() > 0){
-			ortho_project(vecvec,t2_vec);
+		if(ortho_vec.size() > 0){
+			ortho_project(ortho_vec,t2_vec);
 			VecNorm(t2_vec,NORM_2,&norm_val);
 			// renormalize
 			VecScale(t2_vec,1/norm_val);
 			// add vector and tree to the vecs
 		}
 		std::cout << "norm_val " << norm_val << std::endl;
-		vecvec.push_back(t2_vec);
-		vec2tree(t2_vec,t);
-		treevec.push_back(t);
+		ortho_vec.push_back(t2_vec);
+		delete t;
+		//vec2tree(t2_vec,t);
+		//treevec.push_back(t);
 		}
 
 		if(norm_val < compress_tol){
@@ -1212,10 +1185,93 @@ int compress_incident_test(MPI_Comm &comm){
 		std::cout << "num_trees: " << num_trees << std::endl;
 	}
 
+	// Need to create the original matrix U containing all the different incident fields (NOT randomized)
+	std::vector<Vec> u_vec;
+	for(int j=0;j<n_pt_srcs ;j++){
+		{
+			coeffs.clear();
+			for(int i=0;i<pt_src_locs.size()/3;i++){
+				coeffs.push_back((j==i) ? 1 : 0);
+			}
+		}
+
+		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
+		t->bndry = bndry;
+		t->kernel = kernel;
+		t->fn = phi_0_fn;
+		t->f_max = 4;
+		t->CreateTree(false);
+		//t->Write2File("results/t",0);
+
+		//temp->Copy(t);
+
+		//temp->Multiply(bg,1);
+		//temp->RunFMM();
+		//temp->Copy_FMMOutput();
+		//temp->Add(t,1);
+		//t->Copy(temp);
+		//t->Write2File("results/tthing",0);
+
+		{
+		Vec t2_vec;
+		VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
+		tree2vec(t,t2_vec);
+		u_vec.push_back(t2_vec);
+		}
+		delete t;
+	}
+
+	int l1 = ortho_vec.size();
+	int m1;
+	double mat_norm;
+	VecGetSize(ortho_vec[0],&m1);
+	El::DistMatrix<double> Q;
+	Q.Resize(m1,l1);
+	Vecs2ElMat(ortho_vec,Q);
+
+	int n1 = u_vec.size();
+	El::DistMatrix<double> U;
+	U.Resize(m1,n1);
+	Vecs2ElMat(u_vec,U);
+
+
+	for(int i=0;i<n_pt_srcs;i++){
+		VecDestroy(&u_vec[i]);
+	}
+
+	El::DistMatrix<double> A;
+	El::Zeros(A,n1,l1);
+
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,U,Q,1.0,A);
+	El::DistMatrix<double> R;
+	El::qr::Explicit(A,R,El::QRCtrl<double>());
+
+
+	El::DistMatrix<double> U_hat;
+	El::Zeros(U_hat,l1,m1);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R,1.0,U_hat);
+
+	ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
+
+	std::vector<Vec> phi_hat_vec;
+	for(int i=0;i<l1;i++){
+		vec2tree(ortho_vec[i],temp);
+		vec2tree(ortho_vec[i],t1);
+		scatter_born(t1,eta_k2,temp);
+		{
+			Vec phi_hat;
+			VecCreateMPI(comm,n,PETSC_DETERMINE,&phi_hat);
+			tree2vec(temp,phi_hat);
+			u_vec.push_back(phi_hat);
+		}
+	}
+
+
 	PetscRandomDestroy(&r);
 	for(int i=0;i<num_trees;i++){
-		delete treevec[i];
-		VecDestroy(&vecvec[i]);
+		//delete treevec[i];
+		VecDestroy(&ortho_vec[i]);
+		//VecDestroy(&orig_vec[i]);
 	}
 	return 0;
 
@@ -1278,7 +1334,7 @@ int main(int argc, char* argv[]){
   PetscOptionsGetInt (NULL, "-obs",&             OBS  ,NULL);
   PetscOptionsGetReal (NULL, "-alpha",&         ALPHA  ,NULL);
 
-	pvfmm::Profile::Enable(true);
+	//pvfmm::Profile::Enable(true);
 
 	// Define some stuff!
 
@@ -1325,8 +1381,8 @@ int main(int argc, char* argv[]){
 //	ptfmm_trg2tree_test(comm);
 //	mult_op_test(comm);
 //	spectrum_test(comm);
-	mgs_test(comm);
-//	compress_incident_test(comm);
+//	mgs_test(comm);
+	compress_incident_test(comm);
 	El::Finalize();
 
 	return 0;

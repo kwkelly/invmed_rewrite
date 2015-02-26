@@ -607,9 +607,9 @@ void scatter_born(InvMedTree<FMM_Mat_t>* phi_0, InvMedTree<FMM_Mat_t>* scatterer
 
 	std::cout << "does it go here" << std::endl;
 	// -------------------------------------------------------------------
-	// Compute phi using the Born approximation - u = u_0 - \int G(x-y)k^2\eta(y)u_0(y)dy
+	// Compute phi using the Born approximation - u = u_0 + \int G(x-y)k^2\eta(y)u_0(y)dy
 	// -------------------------------------------------------------------
-	phi->Multiply(scatterer,-1);  
+	phi->Multiply(scatterer,1);  
 	phi->RunFMM();
 	phi->Copy_FMMOutput();
 	phi->Add(phi_0,1);
@@ -622,7 +622,7 @@ void scatter_born(InvMedTree<FMM_Mat_t>* phi_0, InvMedTree<FMM_Mat_t>* scatterer
 template <class FMM_Mat_t>
 PetscErrorCode scatter_solve(InvMedTree<FMM_Mat_t>* phi_0, ScatteredData &scattered_data, InvMedTree<FMM_Mat_t> *phi){
 	// -------------------------------------------------------------------
-	// Compute phi by solving  u = u_0 - \int G(x-y)k^2\eta(y)u(y)dy
+	// Compute phi by solving  u = u_0 + \int G(x-y)k^2\eta(y)u(y)dy
 	// for u
 	// -------------------------------------------------------------------
 
@@ -705,6 +705,9 @@ PetscErrorCode scatter_solve(InvMedTree<FMM_Mat_t>* phi_0, ScatteredData &scatte
 #define __FUNCT__ "vec2elmatcol"
 PetscErrorCode Vec2ElMatCol(const Vec &v, El::DistMatrix<double> &A, const int col){
 	PetscErrorCode ierr;
+	MPI_Comm comm;
+	ierr = PetscObjectGetComm((PetscObject)v,&comm);CHKERRQ(ierr);
+
 	int local_sz;
 	int high;
 	int low;
@@ -716,7 +719,8 @@ PetscErrorCode Vec2ElMatCol(const Vec &v, El::DistMatrix<double> &A, const int c
 	for(int i=0;i<local_sz;i++){
 		A.Set(low+i,col,vec_arr[i]); // global set
 	}
-	ierr = VecRestoreArray(v,&vec_arr);
+	ierr = VecRestoreArray(v,&vec_arr); CHKERRQ(ierr);
+	MPI_Barrier(comm);
 	return ierr;
 }
 
@@ -725,6 +729,9 @@ PetscErrorCode Vec2ElMatCol(const Vec &v, El::DistMatrix<double> &A, const int c
 #define __FUNCT__ "elmatcol2vec"
 PetscErrorCode ElMatCol2Vec(Vec &v, const El::DistMatrix<double> &A, const int col){
 	PetscErrorCode ierr;
+	MPI_Comm comm;
+	ierr = PetscObjectGetComm((PetscObject)v,&comm);CHKERRQ(ierr);
+
 	int local_sz;
 	int high;
 	int low;
@@ -738,13 +745,12 @@ PetscErrorCode ElMatCol2Vec(Vec &v, const El::DistMatrix<double> &A, const int c
 	#pragma omp parallel for
 	for(int i=0;i<local_sz;i++){
 		val = A.Get(low+i,col); //global get
-		std::cout << val << std::endl;
 		vec_arr[i] = val;
 	}
-	ierr = VecRestoreArray(v,&vec_arr);
+	ierr = VecRestoreArray(v,&vec_arr); CHKERRQ(ierr);
+	MPI_Barrier(comm);
 	return ierr;
 }
-
 
 #undef __FUNCT__
 #define __FUNCT__ "elmat2vecs"
@@ -753,11 +759,30 @@ PetscErrorCode ElMat2Vecs(std::vector<Vec> &v, const El::DistMatrix<double> &A){
 
 	MPI_Comm comm;
 	int rank;
-	ierr = PetscObjectGetComm((PetscObject)v[0],&comm);CHKERRQ(ierr);
+	ierr = PetscObjectGetComm((PetscObject)(v[0]),&comm);CHKERRQ(ierr);
 	MPI_Comm_rank(comm, &rank);
 	int n_vecs = v.size();
 	for(int i=0;i<n_vecs;i++){
 		ElMatCol2Vec(v[i], A, i);
 	}
+	MPI_Barrier(comm);
 	return ierr;
 }
+
+#undef __FUNCT__
+#define __FUNCT__ "vecs2elmat"
+PetscErrorCode Vecs2ElMat(const std::vector<Vec> &v, El::DistMatrix<double> &A){
+	PetscErrorCode ierr;
+
+	MPI_Comm comm;
+	int rank;
+	ierr = PetscObjectGetComm((PetscObject)(v[0]),&comm);CHKERRQ(ierr);
+	MPI_Comm_rank(comm, &rank);
+	int n_vecs = v.size();
+	for(int i=0;i<n_vecs;i++){
+		Vec2ElMatCol(v[i], A, i);
+	}
+	MPI_Barrier(comm);
+	return ierr;
+}
+

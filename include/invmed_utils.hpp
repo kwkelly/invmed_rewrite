@@ -29,6 +29,21 @@ struct QRData{
 	Mat *R;
 };
 
+
+struct RandQRData{
+	Mat *A;
+	Mat *Atrans;
+	El::DistMatrix<double>*  Q;
+	El::DistMatrix<double>*  R_tilde;
+	El::DistMatrix<double>*  Q_tilde;
+	PetscRandom r;
+	MPI_Comm comm;
+	int m;
+	int n;
+	int M;
+	int N;
+};
+
 #undef __FUNCT__
 #define __FUNCT__ "mult"
 int mult(Mat M, Vec U, Vec Y);
@@ -786,3 +801,212 @@ PetscErrorCode Vecs2ElMat(const std::vector<Vec> &v, El::DistMatrix<double> &A){
 	return ierr;
 }
 
+
+#undef __FUNCT__
+#define __FUNCT__ "randqr"
+PetscErrorCode RandQR(RandQRData* randqrdata, const double compress_tol){
+	PetscErrorCode ierr;
+	Mat *A = randqrdata->A;
+	Mat *Atrans = randqrdata->Atrans;
+	El::DistMatrix<double>* R_tilde = randqrdata->R_tilde;
+	El::DistMatrix<double>* Q_tilde = randqrdata->Q_tilde;
+	El::DistMatrix<double>* Q = randqrdata->Q;
+	PetscRandom r = randqrdata->r;
+	MPI_Comm comm = randqrdata->comm;
+	int m = randqrdata->m;
+	int n = randqrdata->n;
+	int M = randqrdata->M;
+	int N = randqrdata->N;
+
+	std::vector<Vec> ortho_vec;
+
+	int num_vecs = 0;
+	int n_times = 0;
+	//PetscInt M;
+	//PetscInt N;
+	//MatGetSize(*A,&M,&N); //obviously Atrans should be N by M then
+
+	// create random vector
+	Vec coeffs_vec;
+	VecCreateMPI(comm,PETSC_DECIDE,N,&coeffs_vec); // local sizes determined by PETSc, may need fixing in the future
+
+	double norm_val = 1;
+
+	while((norm_val > compress_tol or n_times < 2) and num_vecs < N){
+		num_vecs++;
+		// iniitialize the random vector
+		for(int i=0;i<N;i++){
+			VecSetValue(coeffs_vec,i,randn(0,1,r),INSERT_VALUES); // will need fixing for distributed
+		}
+
+		{
+		// create vector
+		Vec t2_vec;
+		ierr = VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec); CHKERRQ(ierr);
+
+		// y=Ax
+		ierr = MatMult(*A, coeffs_vec, t2_vec); CHKERRQ(ierr);
+
+		// Normalize it
+		VecNorm(t2_vec,NORM_2,&norm_val);
+		VecScale(t2_vec,1/norm_val);
+
+		// project it
+		if(ortho_vec.size() > 0){
+			ortho_project(ortho_vec,t2_vec);
+			VecNorm(t2_vec,NORM_2,&norm_val);
+
+			// renormalize
+			VecScale(t2_vec,1/norm_val);
+		}
+		std::cout << "norm_val " << norm_val << std::endl;
+		ortho_vec.push_back(t2_vec);
+		}
+
+		if(norm_val < compress_tol){
+			n_times++;
+		}
+		std::cout << "num_trees: " << num_vecs << std::endl;
+	}
+	// Now we have created and orthogonalized all the trees that we're going too
+
+	// stuff them into an elemental matrix
+	int l1 = ortho_vec.size();
+	int m1;
+	double mat_norm;
+	VecGetSize(ortho_vec[0],&m1);
+	//El::DistMatrix<double> Q;
+	Q->Resize(m1,l1);
+	Vecs2ElMat(ortho_vec,*Q);
+
+	// Now we need to create all the original columns of 
+	// the input matrix. This is the same as A*e_i for all i.
+	std::vector<Vec> u_vec;
+	for(int j=0;j<N ;j++){
+		for(int i=0;i<N;i++){
+			VecSetValue(coeffs_vec,i,((j==i) ? 1 : 0),INSERT_VALUES);
+		}
+		{
+			Vec t2_vec;
+			VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
+			ierr = MatMult(*A,coeffs_vec,t2_vec); CHKERRQ(ierr);
+			u_vec.push_back(t2_vec);
+		}
+	}
+	// and put the vectors in a matrix
+	int n1 = u_vec.size();
+	El::DistMatrix<double> U;
+	U.Resize(m1,n1);
+	Vecs2ElMat(u_vec,U);
+
+	for(int i=0;i<N;i++){
+		VecDestroy(&u_vec[i]);
+	}
+
+	// compute Q_tilde
+	// The matrix names here are a little weird because eventually
+	// when we compute the QR factorization it stores the Q matrix 
+	// where the inpute matrix was.
+	// First compute A = U*Q
+	//El::DistMatrix<double> Q_tilde;
+	El::Zeros(*Q_tilde,n1,l1);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,U,*Q,1.0,*Q_tilde);
+
+	// compute QtildeR = A
+	//El::DistMatrix<double> R;
+	El::qr::Explicit(*Q_tilde,*R_tilde,El::QRCtrl<double>());
+
+	for(int i=0;i<num_vecs;i++){
+		VecDestroy(&ortho_vec[i]);
+	}
+	return 0;
+	
+
+	return ierr;
+}
+
+struct IncidentData{
+	std::vector<double> *coeffs;
+	pvfmm::BoundaryType bndry;
+	const pvfmm::Kernel<double>* kernel;
+	// this function pointer needs to depened in some way
+	//  on the vector being used in the incident_mult function
+	void (*fn)(const  double* coord, int n, double* out);
+	MPI_Comm comm;
+};
+
+
+#undef __FUNCT__
+#define __FUNCT__ "incident_mult"
+PetscErrorCode incident_mult(Mat M, Vec U, Vec Y){
+	// u  is the vector containing the random coefficients for each of the point sources
+
+	PetscErrorCode ierr;
+	// Get context ... or maybe I won't need any context
+	IncidentData *incident_data = NULL;
+	MatShellGetContext(M, &incident_data);
+	MPI_Comm comm = incident_data->comm;
+	PetscInt vec_length;
+	PetscScalar val;
+	ierr = VecGetSize(U,&vec_length); CHKERRQ(ierr);
+	// PETSc vector to std::vector
+	{
+		incident_data->coeffs->clear(); // this variable unfortunately needs to be global because I can not bind data to a function
+		for(int i=0;i<vec_length;i++){
+			VecGetValues(U,1,&i,&val);
+			std::cout << "i: "<< val << std::endl;
+			incident_data->coeffs->push_back((double)val);
+		}
+	}
+	// create the tree with the current values of the random vector
+	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
+	t->bndry = incident_data->bndry;
+	t->kernel = incident_data->kernel;
+	t->fn = incident_data->fn;
+	t->f_max = 4;
+	t->CreateTree(false);
+
+	// convert the tree into a vector. This vector represents the function
+	// that we passed into the tree constructor (which contains the current 
+	// random coefficients).
+	tree2vec(t,Y);
+
+	delete t;
+
+	return 0;
+}
+
+struct IncidentTransData{
+	MPI_Comm comm;
+	InvMedTree<FMM_Mat_t>* temp;
+	std::vector<double> src_coord;
+	pvfmm::PtFMM_Tree* pt_tree;
+};
+
+#undef __FUNCT__
+#define __FUNCT__ "incident_transpose_mult"
+PetscErrorCode incident_transpose_mult(Mat M, Vec U, Vec Y){
+
+	PetscErrorCode ierr;
+	// Get context ...
+	IncidentTransData *incident_trans_data = NULL;
+	MatShellGetContext(M, &incident_trans_data);
+	MPI_Comm comm = incident_trans_data->comm;
+	InvMedTree<FMM_Mat_t>* temp = incident_trans_data->temp;
+	std::vector<double> src_coord = incident_trans_data->src_coord;
+	pvfmm::PtFMM_Tree* pt_tree = incident_trans_data->pt_tree;
+
+	// get the input data
+	vec2tree(U,temp);
+	std::vector<double> src_values = temp->ReadVals(src_coord);
+	
+	pt_tree->ClearFMMData();
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, 0, &src_values);
+
+	// Insert the values back in
+	temp->Trg2Tree(trg_value);
+	tree2vec(temp,Y);
+
+	return ierr;
+}

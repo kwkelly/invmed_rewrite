@@ -873,7 +873,7 @@ int mgs_test(MPI_Comm &comm){
 	}
 	std::vector<Vec> vecs(n);
 
-					Mat A;
+	Mat A;
 	ierr = 	MatCreate(comm,&A); CHKERRQ(ierr);
 	ierr = 	MatSetType(A,MATSEQDENSE);CHKERRQ(ierr);
 	ierr = 	MatSetSizes(A,PETSC_DECIDE,PETSC_DECIDE,m,n); CHKERRQ(ierr); //create an m by n matrix. Let petsc decide local sizes
@@ -893,7 +893,6 @@ int mgs_test(MPI_Comm &comm){
 	ierr = MatSetSizes(R,PETSC_DECIDE,PETSC_DECIDE,n,n);CHKERRQ(ierr);
 	ierr = MatSetUp(R);CHKERRQ(ierr);
 	ierr = MatSetOption(R,MAT_ROW_ORIENTED,PETSC_FALSE);CHKERRQ(ierr);
-
 
 
 	std::vector<int> rows(m);
@@ -916,8 +915,6 @@ int mgs_test(MPI_Comm &comm){
 		//}
 
 	}
-
-
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -1098,9 +1095,6 @@ int compress_incident_test(MPI_Comm &comm){
 	temp->SetupFMM(fmm_mat);
 
 	std::vector<Vec> ortho_vec;
-	//std::vector<Vec> orig_vec;
-
-	//std::vector<InvMedTree<FMM_Mat_t>*  > treevec;
 
 	PetscReal norm_val = 1;
 
@@ -1110,13 +1104,13 @@ int compress_incident_test(MPI_Comm &comm){
 	PetscInt N = t1->N;
 
 	{
-	int cd =InvMedTree<FMM_Mat_t>::cheb_deg;
-	int nc = (cd+1)*(cd+2)*(cd+3)/6;
-	int nls = (t1->GetNGLNodes()).size();
-	int ys = 2*nc*nls;
+		int cd =InvMedTree<FMM_Mat_t>::cheb_deg;
+		int nc = (cd+1)*(cd+2)*(cd+3)/6;
+		int nls = (t1->GetNGLNodes()).size();
+		int ys = 2*nc*nls;
 
-	std::cout << "n " << n << std::endl;
-	std::cout << "OTHER " << nc << " " <<  ys << " " << nls << " " << 2 << " " << nc << std::endl;
+		std::cout << "n " << n << std::endl;
+		std::cout << "OTHER " << nc << " " <<  ys << " " << nls << " " << 2 << " " << nc << std::endl;
 
 	}
 
@@ -1124,23 +1118,66 @@ int compress_incident_test(MPI_Comm &comm){
 	int n_times = 0;
 
 	double compress_tol = 0.1;
+	Vec coeffs_vec;
+	VecCreateMPI(comm,PETSC_DECIDE,pt_src_locs.size()/3,&coeffs_vec);
 
+	IncidentData incident_data;
+	incident_data.bndry = bndry;
+	incident_data.kernel = kernel;
+	incident_data.fn = phi_0_fn;
+	incident_data.coeffs = &coeffs;
+	incident_data.comm = comm;
+
+
+	Mat inc_mat;
+	MatCreateShell(comm,n,n_pt_srcs,N,n_pt_srcs,&incident_data,&inc_mat); // not sure about the sizes here...
+	MatShellSetOperation(inc_mat,MATOP_MULT,(void(*)(void))incident_mult);
+
+	// Transpose mult should we want it... not being used for now
+	std::vector<double> src_samples = bg->ReadVals(pt_src_locs); //Not sure exactly what this will do...
+	pvfmm::PtFMM_Tree* u_trans = bg->CreatePtFMMTree(pt_src_locs, src_samples, kernel_conj);
+	IncidentTransData inc_trans_data;
+	inc_trans_data.comm = comm;
+	inc_trans_data.temp = temp;
+	inc_trans_data.src_coord = pt_src_locs;
+	inc_trans_data.pt_tree = u_trans;
+
+	El::DistMatrix<double> Q;
+	El::DistMatrix<double> Q_tilde;
+	El::DistMatrix<double> R_tilde;
+	RandQRData randqrdata;
+	randqrdata.A = &inc_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = m;
+	randqrdata.n = n;
+	randqrdata.M = M;
+	randqrdata.N = n_pt_srcs;;
+
+	RandQR(&randqrdata, compress_tol);
+
+	/*
 	while((norm_val > compress_tol or n_times < 2) and num_trees < n_pt_srcs){
 		num_trees++;
 		{
 			coeffs.clear();
 			for(int i=0;i<pt_src_locs.size()/3;i++){
-				coeffs.push_back(randn(0,1,r));
+				VecSetValue(coeffs_vec,i,randn(0,1,r),INSERT_VALUES);
+				//coeffs.push_back(randn(0,1,r));
 			}
 		}
 
-		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
-		t->bndry = bndry;
-		t->kernel = kernel;
-		t->fn = phi_0_fn;
-		t->f_max = 4;
-		t->CreateTree(false);
+		//InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
+		//t->bndry = bndry;
+		//t->kernel = kernel;
+		//t->fn = phi_0_fn;
+		//t->f_max = 4;
+		//t->CreateTree(false);
 		//t->Write2File("results/t",0);
+		//
 
 		//temp->Copy(t);
 
@@ -1157,7 +1194,9 @@ int compress_incident_test(MPI_Comm &comm){
 		//Vec orig;
 		VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
 		//VecDuplicate(t2_vec,&orig);
-		tree2vec(t,t2_vec);
+		//tree2vec(t,t2_vec);
+		incident_mult(inc_mat, coeffs_vec, t2_vec);
+		//VecView(t2_vec,PETSC_VIEWER_STDOUT_WORLD);
 		//VecCopy(t2_vec,orig); // now that we have the copy we can mess with the old one;
 		//orig_vec.push_back(orig);
 		//VecView(t2_vec,	PETSC_VIEWER_STDOUT_WORLD);
@@ -1174,7 +1213,7 @@ int compress_incident_test(MPI_Comm &comm){
 		}
 		std::cout << "norm_val " << norm_val << std::endl;
 		ortho_vec.push_back(t2_vec);
-		delete t;
+		//delete t;
 		//vec2tree(t2_vec,t);
 		//treevec.push_back(t);
 		}
@@ -1184,7 +1223,9 @@ int compress_incident_test(MPI_Comm &comm){
 		}
 		std::cout << "num_trees: " << num_trees << std::endl;
 	}
+*/
 
+	/*
 	// Need to create the original matrix U containing all the different incident fields (NOT randomized)
 	std::vector<Vec> u_vec;
 	for(int j=0;j<n_pt_srcs ;j++){
@@ -1220,7 +1261,9 @@ int compress_incident_test(MPI_Comm &comm){
 		}
 		delete t;
 	}
+	*/
 
+	/*
 	int l1 = ortho_vec.size();
 	int m1;
 	double mat_norm;
@@ -1228,12 +1271,13 @@ int compress_incident_test(MPI_Comm &comm){
 	El::DistMatrix<double> Q;
 	Q.Resize(m1,l1);
 	Vecs2ElMat(ortho_vec,Q);
+	*/
 
+	/*
 	int n1 = u_vec.size();
 	El::DistMatrix<double> U;
 	U.Resize(m1,n1);
 	Vecs2ElMat(u_vec,U);
-
 
 	for(int i=0;i<n_pt_srcs;i++){
 		VecDestroy(&u_vec[i]);
@@ -1246,26 +1290,38 @@ int compress_incident_test(MPI_Comm &comm){
 	El::DistMatrix<double> R;
 	El::qr::Explicit(A,R,El::QRCtrl<double>());
 
+	*/
+	int l1 = Q.Height();
+	int m1 = Q.Width();
 
+	// transform U
 	El::DistMatrix<double> U_hat;
 	El::Zeros(U_hat,l1,m1);
-	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R,1.0,U_hat);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,1.0,U_hat);
 
-	ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
-
+	// transform the left side of the equations
+	// By linearity we can just scatter the data now in U_hat
+	std::vector<Vec> u_hat_vec;
+	for(int i=0;i<l1;i++){
+			Vec u_hat;
+			VecCreateMPI(comm,n,PETSC_DETERMINE,&u_hat);
+			u_hat_vec.push_back(u_hat);
+	}
+	ElMat2Vecs(u_hat_vec,U_hat);
+	
+	//ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
 	std::vector<Vec> phi_hat_vec;
 	for(int i=0;i<l1;i++){
-		vec2tree(ortho_vec[i],temp);
-		vec2tree(ortho_vec[i],t1);
+		vec2tree(u_hat_vec[i],temp);
+		vec2tree(u_hat_vec[i],t1);
 		scatter_born(t1,eta_k2,temp);
 		{
 			Vec phi_hat;
 			VecCreateMPI(comm,n,PETSC_DETERMINE,&phi_hat);
 			tree2vec(temp,phi_hat);
-			u_vec.push_back(phi_hat);
+			u_hat_vec.push_back(phi_hat);
 		}
 	}
-
 
 	PetscRandomDestroy(&r);
 	for(int i=0;i<num_trees;i++){

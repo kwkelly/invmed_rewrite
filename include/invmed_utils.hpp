@@ -772,14 +772,18 @@ PetscErrorCode ElMatCol2Vec(Vec &v, const El::DistMatrix<double> &A, const int c
 PetscErrorCode ElMat2Vecs(std::vector<Vec> &v, const El::DistMatrix<double> &A){
 	PetscErrorCode ierr;
 
+	std::cout << "elm1" << std::endl;
 	MPI_Comm comm;
 	int rank;
 	ierr = PetscObjectGetComm((PetscObject)(v[0]),&comm);CHKERRQ(ierr);
 	MPI_Comm_rank(comm, &rank);
 	int n_vecs = v.size();
+	std::cout << "elm2: " << n_vecs << std::endl;
 	for(int i=0;i<n_vecs;i++){
+	std::cout << "elm2.5: " << i << std::endl;
 		ElMatCol2Vec(v[i], A, i);
 	}
+	std::cout << "elm3" << std::endl;
 	MPI_Barrier(comm);
 	return ierr;
 }
@@ -894,14 +898,17 @@ PetscErrorCode RandQR(RandQRData* randqrdata, const double compress_tol){
 		}
 	}
 	// and put the vectors in a matrix
+	std::cout << "done w/ Creating vecs" << std::endl;
 	int n1 = u_vec.size();
 	El::DistMatrix<double> U;
 	U.Resize(m1,n1);
 	Vecs2ElMat(u_vec,U);
+	std::cout << "done w/ Vecs2ElMat" << std::endl;
 
 	for(int i=0;i<N;i++){
 		VecDestroy(&u_vec[i]);
 	}
+	std::cout << "done w/ destroy u " << std::endl;
 
 	// compute Q_tilde
 	// The matrix names here are a little weird because eventually
@@ -911,17 +918,17 @@ PetscErrorCode RandQR(RandQRData* randqrdata, const double compress_tol){
 	//El::DistMatrix<double> Q_tilde;
 	El::Zeros(*Q_tilde,n1,l1);
 	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,U,*Q,1.0,*Q_tilde);
+	std::cout << "done w/ mult " << std::endl;
 
 	// compute QtildeR = A
 	//El::DistMatrix<double> R;
 	El::qr::Explicit(*Q_tilde,*R_tilde,El::QRCtrl<double>());
+	std::cout << "done w/ qr " << std::endl;
 
 	for(int i=0;i<num_vecs;i++){
 		VecDestroy(&ortho_vec[i]);
 	}
-	return 0;
-	
-
+	std::cout << "done w/ destroy ortho " << std::endl;
 	return ierr;
 }
 
@@ -954,7 +961,6 @@ PetscErrorCode incident_mult(Mat M, Vec U, Vec Y){
 		incident_data->coeffs->clear(); // this variable unfortunately needs to be global because I can not bind data to a function
 		for(int i=0;i<vec_length;i++){
 			VecGetValues(U,1,&i,&val);
-			std::cout << "i: "<< val << std::endl;
 			incident_data->coeffs->push_back((double)val);
 		}
 	}

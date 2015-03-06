@@ -1040,6 +1040,7 @@ int compress_incident_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
 
 	PetscRandom r;
 	PetscRandomCreate(comm,&r);
@@ -1157,7 +1158,7 @@ int compress_incident_test(MPI_Comm &comm){
 	randqrdata.M = M;
 	randqrdata.N = n_pt_srcs;;
 
-	RandQR(&randqrdata, compress_tol);
+	ierr = RandQR(&randqrdata, compress_tol);CHKERRQ(ierr);
 
 	/*
 	while((norm_val > compress_tol or n_times < 2) and num_trees < n_pt_srcs){
@@ -1283,6 +1284,7 @@ int compress_incident_test(MPI_Comm &comm){
 		VecDestroy(&u_vec[i]);
 	}
 
+
 	El::DistMatrix<double> A;
 	El::Zeros(A,n1,l1);
 
@@ -1302,7 +1304,7 @@ int compress_incident_test(MPI_Comm &comm){
 	// transform the left side of the equations
 	// By linearity we can just scatter the data now in U_hat
 	std::vector<Vec> u_hat_vec;
-	for(int i=0;i<l1;i++){
+	for(int i=0;i<m1;i++){
 			Vec u_hat;
 			VecCreateMPI(comm,n,PETSC_DETERMINE,&u_hat);
 			u_hat_vec.push_back(u_hat);
@@ -1311,7 +1313,7 @@ int compress_incident_test(MPI_Comm &comm){
 	
 	//ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
 	std::vector<Vec> phi_hat_vec;
-	for(int i=0;i<l1;i++){
+	for(int i=0;i<m1;i++){
 		vec2tree(u_hat_vec[i],temp);
 		vec2tree(u_hat_vec[i],t1);
 		scatter_born(t1,eta_k2,temp);

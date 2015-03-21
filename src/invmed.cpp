@@ -210,7 +210,7 @@ int main(int argc, char* argv[]){
 
 	// Turn phi into the RHS for the inverse medium problem
 	phi->Add(phi_0,-1);
-	phi->ScalarMultiply(-1);
+	//phi->ScalarMultiply(-1);
 	phi->Write2File("results/difference",0);
 
 	// Sample phi at the points in src_coord, then apply the transpose

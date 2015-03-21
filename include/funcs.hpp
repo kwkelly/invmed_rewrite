@@ -30,6 +30,8 @@ void sc_fn(const double* coord, int n, double* out);
 
 void scc_fn(const double* coord, int n, double* out);
 
+void sc2_fn(const double* coord, int n, double* out);
+
 void twosin_fn(const double* coord, int n, double* out);
 
 void ctr_pt_source_fn(const double* coord, int n, double* out);
@@ -42,17 +44,23 @@ void poly_fn(const double* coord, int n, double* out);
 
 void poly_prod_fn(const double* coord, int n, double* out);
 
+void prod_fn(const double* coord, int n, double* out);
+
 void linear_fn(const double* coord, int n, double* out);
 
 void linear_prod_fn(const double* coord, int n, double* out);
 
 void pt_src_sol_fn(const double* coord, int n, double* out, const double* src_coord);
 
-void linear_comb_of_pt_src(const double* coord, int n, double* out, std::vector<double> coeffs, std::vector<double> src_coords);
+void linear_comb_of_pt_src(const double* coord, int n, double* out, const std::vector<double> &coeffs, const std::vector<double> &src_coords);
 
 void k2_fn(const double* coord, int n, double* out);
 
-
 void eta_plus_k2_fn(const  double* coord, int n, double* out);
 
+void mask_fn(const  double* coord, int n, double* out);
+
+void cmask_fn(const  double* coord, int n, double* out);
+
+void eta2_fn(const  double* coord, int n, double* out);
 #endif

@@ -269,7 +269,7 @@ int conj_multiply_test(MPI_Comm &comm){
 	sc->ConjMultiply(sc2,1);
 	sc->Add(sol,-1);
 
-	double rel_norm = sc->Norm2()/sol->Norm2();
+	double rel_norm = sc->Norm2();
 
 	if(rel_norm < 1e-10){
 		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - relative norm=" << rel_norm  << std::endl;
@@ -281,6 +281,55 @@ int conj_multiply_test(MPI_Comm &comm){
 
 	delete sc;
 	delete sc2;
+	delete sol;
+
+	return 0;
+}
+
+
+int conj_multiply_test2(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	InvMedTree<FMM_Mat_t> *sc = new InvMedTree<FMM_Mat_t>(comm);
+	sc->bndry = bndry;
+	sc->kernel = kernel;
+	sc->fn = sc_fn;
+	sc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *scc = new InvMedTree<FMM_Mat_t>(comm);
+	scc->bndry = bndry;
+	scc->kernel = kernel;
+	scc->fn = scc_fn;
+	scc->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = sc2_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//multiply the two, then get their difference
+	sc->ConjMultiply(scc,1);
+	sc->Add(sol,-1);
+
+	double rel_norm = sc->Norm2();
+
+	if(rel_norm < 1e-10){
+		std::cout << "\033[2;32m Conjugate multiply test 2 passed! \033[0m - relative norm=" << rel_norm  << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test 2 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
+	}
+
+
+	delete sc;
+	delete scc;
 	delete sol;
 
 	return 0;
@@ -421,7 +470,7 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 	one->Trg2Tree(trg_value);
 	one->Add(sol,-1);
 
-	double rel_norm = one->Norm2()/sol->Norm2();
+	double rel_norm = one->Norm2();
 
 
 	if(val_test){
@@ -484,7 +533,7 @@ int int_test(MPI_Comm &comm){
 	test_fn->Write2File("results/should_be_zero",0);
 	sol->Write2File("results/sol",0);
 
-	double rel_norm = test_fn->Norm2()/sol->Norm2();
+	double rel_norm = test_fn->Norm2();
 
 	if(rel_norm < 1e-10){
 		std::cout << "\033[2;32m Integration test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
@@ -496,6 +545,70 @@ int int_test(MPI_Comm &comm){
 	delete test_fn;
 	delete sol;
 	delete fmm_mat;
+
+	return 0;
+}
+
+
+int int_test2(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	// check the solution...
+	//double on = one->Norm2();
+	std::vector<double> integral = one->Integrate();
+
+	if(abs(integral[0] - 1 < 1e-5) and abs(integral[1] < 1e-5)){
+		std::cout << "\033[2;32m Integration test passed! \033[0m-  integra=" << integral[0] << " " << integral[1]   << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- integra=" << integral[0] << " " << integral[1]  << std::endl;
+	}
+
+	delete one;
+
+	return 0;
+}
+
+
+int int_test3(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	InvMedTree<FMM_Mat_t> *prod = new InvMedTree<FMM_Mat_t>(comm);
+	prod->bndry = bndry;
+	prod->kernel = kernel;
+	prod->fn = prod_fn;
+	prod->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	// check the solution...
+	//double on = one->Norm2();
+	std::vector<double> integral = prod->Integrate();
+
+	if(abs(integral[0] - .125 < 1e-5) and abs(integral[1] -.125 < 1e-5)){
+		std::cout << "\033[2;32m Integration test passed! \033[0m-  integra=" << integral[0] << " " << integral[1]   << std::endl;
+	}
+	else{
+		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- integra=" << integral[0] << " " << integral[1]  << std::endl;
+	}
+
+	delete prod;
 
 	return 0;
 }
@@ -942,7 +1055,7 @@ int mgs_test(MPI_Comm &comm){
 	El::DistMatrix<double> eye;
 	El::Zeros(eye,n,n);
 	eye.Resize(10,10);
-	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,D,D,1.0,eye);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,D,D,0.0,eye);
 	El::Print(eye,"eye");
 
 
@@ -1047,8 +1160,13 @@ int compress_incident_test(MPI_Comm &comm){
 	PetscRandomSetSeed(r,time(NULL));
 	PetscRandomSetType(r,PETSCRAND48);
 
-	int n_pt_srcs = 100;
-	pt_src_locs = equisph(n_pt_srcs,1);
+	int create_number = 100;
+	//pt_src_locs = equisph(create_number,1);
+	create_number  = 2;
+	pt_src_locs = equiplane(create_number,0,0.1); // should generate 100 points with the above change
+	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
+	int n_pt_srcs = pt_src_locs.size()/3;
+	int data_dof = 2;
 
 	{
 		coeffs.clear();
@@ -1067,6 +1185,13 @@ int compress_incident_test(MPI_Comm &comm){
 	t1->fn = phi_0_fn; // this is the function that computes a linear combination of pt sources located on sphere
 	t1->f_max = 4;
 
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = mask_fn; // this is the function that computes a linear combination of pt sources located on sphere
+	mask->f_max = 1;
+
 	InvMedTree<FMM_Mat_t> *bg = new InvMedTree<FMM_Mat_t>(comm);
 	bg->bndry = bndry;
 	bg->kernel = kernel;
@@ -1081,7 +1206,7 @@ int compress_incident_test(MPI_Comm &comm){
 
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
 	temp->bndry = bndry;
-	temp->kernel = kernel;
+	temp->kernel = kernel_conj;
 	temp->fn = zero_fn;
 	temp->f_max = 0;
 
@@ -1089,9 +1214,10 @@ int compress_incident_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
 	bg->Write2File("results/bg",0);
+	t1->Write2File("results/incident",0);
 
 	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
 
 	temp->SetupFMM(fmm_mat);
 
@@ -1131,178 +1257,64 @@ int compress_incident_test(MPI_Comm &comm){
 
 
 	Mat inc_mat;
-	MatCreateShell(comm,n,n_pt_srcs,N,n_pt_srcs,&incident_data,&inc_mat); // not sure about the sizes here...
+	MatCreateShell(comm,m,n_pt_srcs*data_dof,M,n_pt_srcs*data_dof,&incident_data,&inc_mat); // not sure about the sizes here...
 	MatShellSetOperation(inc_mat,MATOP_MULT,(void(*)(void))incident_mult);
+
 
 	// Transpose mult should we want it... not being used for now
 	std::vector<double> src_samples = bg->ReadVals(pt_src_locs); //Not sure exactly what this will do...
 	pvfmm::PtFMM_Tree* u_trans = bg->CreatePtFMMTree(pt_src_locs, src_samples, kernel_conj);
 	IncidentTransData inc_trans_data;
 	inc_trans_data.comm = comm;
-	inc_trans_data.temp = temp;
+	inc_trans_data.temp_c = temp;
 	inc_trans_data.src_coord = pt_src_locs;
 	inc_trans_data.pt_tree = u_trans;
 
-	El::DistMatrix<double> Q;
-	El::DistMatrix<double> Q_tilde;
-	El::DistMatrix<double> R_tilde;
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat inc_mat_trans;
+	MatCreateShell(comm,n_pt_srcs*data_dof,m,n_pt_srcs*data_dof,M,&inc_trans_data,&inc_mat_trans); // not sure about the sizes here...
+	MatShellSetOperation(inc_mat_trans,MATOP_MULT,(void(*)(void))incident_transpose_mult);
+
+	// Need to define a process grid
+	int size;
+	ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+	El::Grid grid(comm,size);
+
+	El::DistMatrix<double> Q(grid);
+	El::DistMatrix<double> Q_tilde(grid);
+	El::DistMatrix<double> R_tilde(grid);
 	RandQRData randqrdata;
 	randqrdata.A = &inc_mat;
+	randqrdata.Atrans = &inc_mat_trans;
 	randqrdata.Q = &Q;
 	randqrdata.Q_tilde = &Q_tilde;
 	randqrdata.R_tilde = &R_tilde;
 	randqrdata.comm = comm;
 	randqrdata.r = r;
 	randqrdata.m = m;
-	randqrdata.n = n;
+	randqrdata.n = n_pt_srcs;
 	randqrdata.M = M;
-	randqrdata.N = n_pt_srcs;;
+	randqrdata.N = n_pt_srcs;
+	randqrdata.grid = &grid;
 
-	ierr = RandQR(&randqrdata, compress_tol);CHKERRQ(ierr);
+	ierr = RandQR(&randqrdata, 2, compress_tol,1);CHKERRQ(ierr);
 
-	/*
-	while((norm_val > compress_tol or n_times < 2) and num_trees < n_pt_srcs){
-		num_trees++;
-		{
-			coeffs.clear();
-			for(int i=0;i<pt_src_locs.size()/3;i++){
-				VecSetValue(coeffs_vec,i,randn(0,1,r),INSERT_VALUES);
-				//coeffs.push_back(randn(0,1,r));
-			}
-		}
-
-		//InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
-		//t->bndry = bndry;
-		//t->kernel = kernel;
-		//t->fn = phi_0_fn;
-		//t->f_max = 4;
-		//t->CreateTree(false);
-		//t->Write2File("results/t",0);
-		//
-
-		//temp->Copy(t);
-
-		//temp->Multiply(bg,1);
-		//temp->RunFMM();
-		//temp->Copy_FMMOutput();
-		//temp->Add(t,1);
-		//t->Copy(temp);
-		//t->Write2File("results/tthing",0);
-
-		// create vector
-		{
-		Vec t2_vec;
-		//Vec orig;
-		VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
-		//VecDuplicate(t2_vec,&orig);
-		//tree2vec(t,t2_vec);
-		incident_mult(inc_mat, coeffs_vec, t2_vec);
-		//VecView(t2_vec,PETSC_VIEWER_STDOUT_WORLD);
-		//VecCopy(t2_vec,orig); // now that we have the copy we can mess with the old one;
-		//orig_vec.push_back(orig);
-		//VecView(t2_vec,	PETSC_VIEWER_STDOUT_WORLD);
-		// Normalize it
-		VecNorm(t2_vec,NORM_2,&norm_val);
-		VecScale(t2_vec,1/norm_val);
-		// project it
-		if(ortho_vec.size() > 0){
-			ortho_project(ortho_vec,t2_vec);
-			VecNorm(t2_vec,NORM_2,&norm_val);
-			// renormalize
-			VecScale(t2_vec,1/norm_val);
-			// add vector and tree to the vecs
-		}
-		std::cout << "norm_val " << norm_val << std::endl;
-		ortho_vec.push_back(t2_vec);
-		//delete t;
-		//vec2tree(t2_vec,t);
-		//treevec.push_back(t);
-		}
-
-		if(norm_val < compress_tol){
-			n_times++;
-		}
-		std::cout << "num_trees: " << num_trees << std::endl;
-	}
-*/
-
-	/*
-	// Need to create the original matrix U containing all the different incident fields (NOT randomized)
-	std::vector<Vec> u_vec;
-	for(int j=0;j<n_pt_srcs ;j++){
-		{
-			coeffs.clear();
-			for(int i=0;i<pt_src_locs.size()/3;i++){
-				coeffs.push_back((j==i) ? 1 : 0);
-			}
-		}
-
-		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
-		t->bndry = bndry;
-		t->kernel = kernel;
-		t->fn = phi_0_fn;
-		t->f_max = 4;
-		t->CreateTree(false);
-		//t->Write2File("results/t",0);
-
-		//temp->Copy(t);
-
-		//temp->Multiply(bg,1);
-		//temp->RunFMM();
-		//temp->Copy_FMMOutput();
-		//temp->Add(t,1);
-		//t->Copy(temp);
-		//t->Write2File("results/tthing",0);
-
-		{
-		Vec t2_vec;
-		VecCreateMPI(comm,n,PETSC_DETERMINE,&t2_vec);
-		tree2vec(t,t2_vec);
-		u_vec.push_back(t2_vec);
-		}
-		delete t;
-	}
-	*/
-
-	/*
-	int l1 = ortho_vec.size();
-	int m1;
-	double mat_norm;
-	VecGetSize(ortho_vec[0],&m1);
-	El::DistMatrix<double> Q;
-	Q.Resize(m1,l1);
-	Vecs2ElMat(ortho_vec,Q);
-	*/
-
-	/*
-	int n1 = u_vec.size();
-	El::DistMatrix<double> U;
-	U.Resize(m1,n1);
-	Vecs2ElMat(u_vec,U);
-
-	for(int i=0;i<n_pt_srcs;i++){
-		VecDestroy(&u_vec[i]);
-	}
-
-
-	El::DistMatrix<double> A;
-	El::Zeros(A,n1,l1);
-
-	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,U,Q,1.0,A);
-	El::DistMatrix<double> R;
-	El::qr::Explicit(A,R,El::QRCtrl<double>());
-
-	*/
 	int l1 = Q.Height();
 	int m1 = Q.Width();
 
+	// let's see if the matrix Q is orthogonal
+	El::DistMatrix<double> eye(grid);
+	El::Zeros(eye,m1,m1);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Q,0.0,eye);
+	El::Display(eye);
+
 	// transform U
-	El::DistMatrix<double> U_hat;
+	El::DistMatrix<double> U_hat(grid);
 	El::Zeros(U_hat,l1,m1);
-	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,1.0,U_hat);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,0.0,U_hat);
 
 	// transform the left side of the equations
-	// By linearity we can just scatter the data now in U_hat
+	// we can just scatter the data now in U_hat
 	std::vector<Vec> u_hat_vec;
 	for(int i=0;i<m1;i++){
 			Vec u_hat;
@@ -1334,6 +1346,995 @@ int compress_incident_test(MPI_Comm &comm){
 	return 0;
 
 }
+
+
+int randqr_test1(MPI_Comm &comm){
+
+	PetscErrorCode ierr;
+	double compress_tol = 0.01;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	PetscInt m = 20;
+	PetscInt M = 20;
+	PetscInt n = 10;
+	PetscInt N = 10;
+
+	Mat A_mat;
+	ierr = 	MatCreate(comm,&A_mat); CHKERRQ(ierr);
+	ierr = 	MatSetType(A_mat,MATSEQDENSE);CHKERRQ(ierr);
+	ierr = 	MatSetSizes(A_mat,PETSC_DECIDE,PETSC_DECIDE,m,n); CHKERRQ(ierr); //create an m by n matrix. Let petsc decide local sizes
+	ierr = 	MatSetUp(A_mat);CHKERRQ(ierr);
+	ierr = MatSetRandom(A_mat,r); CHKERRQ(ierr);
+
+	Mat LR_mat;
+	MatCreateShell(comm,M,M,M,M,&A_mat,&LR_mat);
+	MatShellSetOperation(LR_mat,MATOP_MULT,(void(*)(void))LR_mult);
+
+	Mat LRt_mat;
+	MatCreateShell(comm,M,M,M,M,&A_mat,&LRt_mat);
+	MatShellSetOperation(LRt_mat,MATOP_MULT,(void(*)(void))LR_mult);
+
+
+	// create the transpose
+	std::cout << "dbgr1" << std::endl;
+	Mat At_mat;
+	MatCreateTranspose(A_mat,&At_mat);
+	std::cout << "dbgr2" << std::endl;
+
+	// Need to define a process grid
+	int size;
+	ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+	El::Grid grid(comm,size);
+
+	El::DistMatrix<double> Q(grid);
+	El::DistMatrix<double> Q_tilde(grid);
+	El::DistMatrix<double> R_tilde(grid);
+	RandQRData randqrdata;
+	randqrdata.A = &A_mat;
+	randqrdata.Atrans = &At_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = m;
+	randqrdata.n = n;
+	randqrdata.M = M;
+	randqrdata.N = N;
+	randqrdata.grid = &grid;
+
+	ierr = RandQR(&randqrdata, 3, 8,1);CHKERRQ(ierr);
+
+	int l1 = Q.Height();
+	int m1 = Q.Width();
+
+	// let's see if the matrix Q is orthogonal
+	El::DistMatrix<double> eye(grid);
+	El::Zeros(eye,m1,m1);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Q,0.0,eye);
+	//El::Display(eye);
+
+	// transform U
+	El::DistMatrix<double> U_hat(grid);
+	El::Zeros(U_hat,l1,m1);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,0.0,U_hat);
+
+
+	PetscRandomDestroy(&r);
+	return 0;
+
+}
+
+
+int randqr_test2(MPI_Comm &comm){
+
+	PetscErrorCode ierr;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	PetscInt m = 10;
+	PetscInt M = 10;
+	PetscInt n = 5;
+	PetscInt N = 5;
+
+	Mat A_mat;
+	ierr = 	MatCreate(comm,&A_mat); CHKERRQ(ierr);
+	ierr = 	MatSetType(A_mat,MATSEQDENSE);CHKERRQ(ierr);
+	ierr = 	MatSetSizes(A_mat,PETSC_DECIDE,PETSC_DECIDE,m,n); CHKERRQ(ierr); //create an m by n matrix. Let petsc decide local sizes
+	ierr = 	MatSetUp(A_mat);CHKERRQ(ierr);
+	ierr = MatSetRandom(A_mat,r); CHKERRQ(ierr);
+
+	Mat LR_mat;
+	MatCreateShell(comm,M,M,M,M,&A_mat,&LR_mat);
+	MatShellSetOperation(LR_mat,MATOP_MULT,(void(*)(void))LR_mult);
+
+	Mat LRt_mat;
+	MatCreateShell(comm,M,M,M,M,&A_mat,&LRt_mat);
+	MatShellSetOperation(LRt_mat,MATOP_MULT,(void(*)(void))LR_mult);
+
+
+	// create the transpose
+	std::cout << "dbgr1" << std::endl;
+	Mat At_mat;
+	MatCreateTranspose(A_mat,&At_mat);
+	std::cout << "dbgr2" << std::endl;
+
+	// Need to define a process grid
+	int size;
+	ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+	El::Grid grid(comm,size);
+
+	El::DistMatrix<double> Q(grid);
+	El::DistMatrix<double> Q_tilde(grid);
+	El::DistMatrix<double> R_tilde(grid);
+	RandQRData randqrdata;
+	randqrdata.A = &LR_mat;
+	randqrdata.Atrans = &LRt_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = m;
+	randqrdata.n = m;
+	randqrdata.M = M;
+	randqrdata.N = M;
+	randqrdata.grid = &grid;
+
+	ierr = RandQR(&randqrdata, 0, 3,1);CHKERRQ(ierr);
+
+	int l1 = Q.Height();
+	int m1 = Q.Width();
+
+	// let's see if the matrix Q is orthogonal
+	El::DistMatrix<double> eye(grid);
+	El::Zeros(eye,m1,m1);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Q,0.0,eye);
+	//El::Display(eye);
+
+	// transform U
+	El::DistMatrix<double> U_hat(grid);
+	El::Zeros(U_hat,l1,m1);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,0.0,U_hat);
+
+
+	PetscRandomDestroy(&r);
+	return 0;
+
+}
+
+
+int factorize_G_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	std::vector<double> detector_coord = equiplane(2,0,.9);
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = mask_fn;
+	mask->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+
+	temp->SetupFMM(fmm_mat);
+
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+	int n_detectors = detector_coord.size()/3;
+
+	double compress_tol = 0.1;
+
+	std::vector<double> detector_samples = temp->ReadVals(detector_coord); //Not sure exactly what this will do...
+	pvfmm::PtFMM_Tree* Gt_tree = temp->CreatePtFMMTree(detector_coord, detector_samples, kernel_conj);
+
+	InvMedData g_data;
+	g_data.temp = temp;
+	g_data.phi_0 = mask;
+	g_data.src_coord = detector_coord;
+	g_data.pt_tree = Gt_tree;
+
+	Mat G_mat;
+	MatCreateShell(comm,n_detectors*2,n,n_detectors*2,N,&g_data,&G_mat); // not sure about the sizes here...
+	MatShellSetOperation(G_mat,MATOP_MULT,(void(*)(void))G_mult);
+
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat Gt_mat;
+	MatCreateShell(comm,n,n_detectors*2,N,n_detectors*2,&g_data,&Gt_mat); // not sure about the sizes here...
+	MatShellSetOperation(Gt_mat,MATOP_MULT,(void(*)(void))Gt_mult);
+
+	// Need to define a process grid
+	int size;
+	ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+	El::Grid grid(comm,size);
+
+	El::DistMatrix<double> Q(grid);
+	El::DistMatrix<double> Q_tilde(grid);
+	El::DistMatrix<double> R_tilde(grid);
+	RandQRData randqrdata;
+	randqrdata.A = &G_mat;
+	randqrdata.Atrans = &Gt_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = n_detectors*2;
+	randqrdata.n = n;
+	randqrdata.M = n_detectors*2;
+	randqrdata.N = N;
+	randqrdata.grid = &grid;
+
+	ierr = RandQR(&randqrdata, 0, compress_tol,1);CHKERRQ(ierr);
+
+	int l1 = Q.Height();
+	int m1 = Q.Width();
+
+	// let's see if the matrix Q is orthogonal
+	El::DistMatrix<double> eye(grid);
+	El::Zeros(eye,m1,m1);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Q,0.0,eye);
+	El::Display(eye);
+
+	// transform U
+	El::DistMatrix<double> U_hat(grid);
+	El::Zeros(U_hat,l1,m1);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,0.0,U_hat);
+
+	// transform the left side of the equations
+	// we can just scatter the data now in U_hat
+	/*
+	std::vector<Vec> u_hat_vec;
+	for(int i=0;i<m1;i++){
+			Vec u_hat;
+			VecCreateMPI(comm,n,PETSC_DETERMINE,&u_hat);
+			u_hat_vec.push_back(u_hat);
+	}
+	ElMat2Vecs(u_hat_vec,U_hat);
+	
+	//ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
+	std::vector<Vec> phi_hat_vec;
+	for(int i=0;i<m1;i++){
+		vec2tree(u_hat_vec[i],temp);
+		vec2tree(u_hat_vec[i],t1);
+		scatter_born(t1,eta_k2,temp);
+		{
+			Vec phi_hat;
+			VecCreateMPI(comm,n,PETSC_DETERMINE,&phi_hat);
+			tree2vec(temp,phi_hat);
+			u_hat_vec.push_back(phi_hat);
+		}
+	}
+	*/
+
+	PetscRandomDestroy(&r);
+	//for(int i=0;i<num_trees;i++){
+		//delete treevec[i];
+	//	VecDestroy(&ortho_vec[i]);
+		//VecDestroy(&orig_vec[i]);
+	//}
+	return 0;
+
+}
+
+int GGt_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
+	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *test_fn = new InvMedTree<FMM_Mat_t>(comm);
+	test_fn->bndry = bndry;
+	test_fn->kernel = kernel;
+	test_fn->fn = int_test_fn;
+	test_fn->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = int_test_sol_fn;
+	sol->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = cs_fn;
+	one->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+
+	InvMedTree<FMM_Mat_t> *csol = new InvMedTree<FMM_Mat_t>(comm);
+	csol->bndry = bndry;
+	csol->kernel = kernel;
+	csol->fn = ctr_pt_sol_conj_fn;
+	csol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	mask->Write2File("../results/mask",0);
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+
+	temp->SetupFMM(fmm_mat);
+
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+	int n_detectors = detector_coord.size()/3;
+
+	std::vector<double> detector_samples = temp->ReadVals(detector_coord); //Not sure exactly what this will do...
+	pvfmm::PtFMM_Tree* Gt_tree = temp->CreatePtFMMTree(detector_coord, detector_samples, kernel_conj);
+
+	InvMedData g_data;
+	g_data.temp = temp;
+	g_data.phi_0 = mask;
+	g_data.src_coord = detector_coord;
+	g_data.pt_tree = Gt_tree;
+
+	Mat G_mat;
+	MatCreateShell(comm,n_detectors*2,n,n_detectors*2,N,&g_data,&G_mat); // not sure about the sizes here...
+	MatShellSetOperation(G_mat,MATOP_MULT,(void(*)(void))G_mult);
+
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat Gt_mat;
+	MatCreateShell(comm,n,n_detectors*2,N,n_detectors*2,&g_data,&Gt_mat); // not sure about the sizes here...
+	MatShellSetOperation(Gt_mat,MATOP_MULT,(void(*)(void))Gt_mult);
+
+	Vec x;
+	std::cout << "n: " << n <<std::endl;
+	std::cout << "N: " << N <<std::endl;
+	ierr = VecCreateMPI(comm,n,N,&x); CHKERRQ(ierr);
+	ierr = VecSetRandom(x,r); CHKERRQ(ierr);
+	vec2tree(x,temp);
+	std::vector<double> fvec = {1};
+	temp->FilterChebTree(fvec);
+	tree2vec(temp,x);
+
+	Vec y;
+	Vec conj;
+	ierr = VecCreateMPI(comm,n_detectors*2,n_detectors*2,&y); CHKERRQ(ierr);
+	ierr = VecCreateMPI(comm,n_detectors*2,n_detectors*2,&conj); CHKERRQ(ierr);
+	ierr = VecSetRandom(y,r); CHKERRQ(ierr);
+	//VecSetValue(y,0,1,INSERT_VALUES);
+	//VecSetValue(y,1,1,INSERT_VALUES);
+	VecSetValue(conj,0,1,INSERT_VALUES);
+	VecSetValue(conj,1,-1,INSERT_VALUES);
+
+
+	Vec Gx;
+	ierr = VecCreateMPI(comm,n_detectors*2,n_detectors*2,&Gx); CHKERRQ(ierr);
+	VecView(Gx, PETSC_VIEWER_STDOUT_SELF);
+	std::vector<double> t1 = sol->ReadVals(detector_coord);
+	for(int i=0;i<t1.size();i++){
+		std::cout << "sol: " << i << " " << t1[i] << std::endl;
+	}
+
+	ierr = MatMult(G_mat,x,Gx); CHKERRQ(ierr);
+	VecView(Gx, PETSC_VIEWER_STDOUT_SELF);
+
+	//PetscReal Gxy;
+	PetscInt size;
+	double real =0;
+	double im = 0;
+	VecGetSize(Gx,&size);
+	const double* v1;
+	ierr = VecGetArrayRead(Gx,&v1);CHKERRQ(ierr);
+	const double* v2;
+	ierr = VecGetArrayRead(y,&v2);CHKERRQ(ierr);
+	for(int i=0;i<size/2;i++){
+		double a =v1[i*2 + 0];
+		double b =v1[i*2 + 1];
+		double c =v2[i*2 + 0];
+		double d =v2[i*2 + 1];
+
+		real += a*c + b*d;
+		im   += b*c - a*d;
+	}
+
+	std::cout << "ip =============================" <<std::endl;
+	std::cout << real << std::endl;
+	std::cout << im << std::endl;
+
+	ierr = VecRestoreArrayRead(Gx,&v1);CHKERRQ(ierr);
+	ierr = VecRestoreArrayRead(y,&v2);CHKERRQ(ierr);
+	
+
+	// Now do it the other way
+	Vec Gsy;
+	ierr = VecCreateMPI(comm,n,N,&Gsy); CHKERRQ(ierr);
+
+	//ierr = VecPointwiseMult(y,conj,y); CHKERRQ(ierr);
+	ierr = MatMult(Gt_mat,y,Gsy); CHKERRQ(ierr);
+	vec2tree(x,temp);
+	vec2tree(Gsy,one);
+	temp->ConjMultiply(one,1);
+
+	std::vector<double> xGsy = temp->Integrate();
+
+	std::cout << "=================================" << std::endl;
+	std::cout << xGsy[0] << std::endl;
+	std::cout << xGsy[1] << std::endl;
+
+	PetscRandomDestroy(&r);
+	return 0;
+
+}
+
+int UUt_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	int data_dof = 2;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	int create_number = 100;
+	//pt_src_locs = equisph(create_number,1);
+	create_number  = 1;
+	//pt_src_locs = equiplane(create_number,0,0.1); // should generate 100 points with the above change
+	pt_src_locs = {.4,.4,.4,.6,.6,.6};
+	pt_src_locs = {.5,.5,.5};
+	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
+	int n_pt_srcs = pt_src_locs.size()/3;
+
+	{
+		coeffs.clear();
+		for(int i=0;i<pt_src_locs.size()/3;i++){
+			coeffs.push_back(1); // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
+			//coeffs.push_back(randn(0,1,r));
+			//coeffs.push_back(.5);
+		}
+	}
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel_conj;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *prod = new InvMedTree<FMM_Mat_t>(comm);
+	prod->bndry = bndry;
+	prod->kernel = kernel;
+	prod->fn = cs_fn;
+	prod->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = ctr_pt_sol_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
+
+	temp->SetupFMM(fmm_mat);
+
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+
+	Vec coeffs_vec;
+	VecCreateMPI(comm,PETSC_DECIDE,pt_src_locs.size()/3,&coeffs_vec);
+
+	IncidentData incident_data;
+	incident_data.bndry = bndry;
+	incident_data.kernel = kernel;
+	incident_data.fn = phi_0_fn;
+	incident_data.coeffs = &coeffs;
+	incident_data.mask = mask;
+	incident_data.comm = comm;
+
+	Mat U_mat;
+	MatCreateShell(comm,m,n_pt_srcs*data_dof,M,n_pt_srcs*data_dof,&incident_data,&U_mat); // not sure about the sizes here...
+	MatShellSetOperation(U_mat,MATOP_MULT,(void(*)(void))incident_mult);
+
+	// Transpose mult should we want it... not being used for now
+	//std::vector<double> src_samples = bg->ReadVals(pt_src_locs); //Not sure exactly what this will do...
+	//pvfmm::PtFMM_Tree* u_trans = bg->CreatePtFMMTree(pt_src_locs, src_samples, kernel_conj);
+	IncidentTransData inc_trans_data;
+	inc_trans_data.comm = comm;
+	inc_trans_data.mask = mask;
+	inc_trans_data.temp_c = temp;
+	inc_trans_data.src_coord = pt_src_locs;
+	//inc_trans_data.pt_tree = u_trans;
+
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat Ut_mat;
+	MatCreateShell(comm,n_pt_srcs*data_dof,m,n_pt_srcs*data_dof,M,&inc_trans_data,&Ut_mat); // not sure about the sizes here
+	MatShellSetOperation(Ut_mat,MATOP_MULT,(void(*)(void))incident_transpose_mult);
+
+
+	Vec x;
+	ierr = VecCreateMPI(comm,n_pt_srcs*data_dof,n_pt_srcs*data_dof,&x); CHKERRQ(ierr);
+	ierr = VecSetRandom(x,r); CHKERRQ(ierr);
+	//ierr = VecSetValue(x,0,1,INSERT_VALUES);
+	//ierr = VecSetValue(x,1,0,INSERT_VALUES);
+
+	Vec y;
+	ierr = VecCreateMPI(comm,m,M,&y); CHKERRQ(ierr);
+	ierr = VecSetRandom(y,r); CHKERRQ(ierr);
+	vec2tree(y,temp);
+	std::vector<double> fvec = {1};
+	temp->FilterChebTree(fvec);
+	tree2vec(temp,y);
+
+	Vec Ux;
+	ierr = VecCreateMPI(comm,m,M,&Ux); CHKERRQ(ierr);
+
+	ierr = MatMult(U_mat,x,Ux); CHKERRQ(ierr);
+	//PetscReal Uxy;
+	//ierr = VecDot(Ux,y,&Uxy); CHKERRQ(ierr);
+
+	// No do it the other way
+	Vec Usy;
+	ierr = VecCreateMPI(comm,n_pt_srcs*data_dof,n_pt_srcs*data_dof,&Usy); CHKERRQ(ierr);
+	ierr = MatMult(Ut_mat,y,Usy); CHKERRQ(ierr);
+	vec2tree(Ux,temp);
+	//temp->Multiply(mask,1);
+	sol->Multiply(mask,1);
+	temp->Add(sol,-1);
+	temp->Write2File("../results/temp",0);
+	std::cout << "nrm: " << temp->Norm2() << std::endl;
+	
+	//PetscReal xUsy;
+	//ierr = VecDot(x,Usy,&xUsy); CHKERRQ(ierr);
+	
+	PetscInt size;
+	double real =0;
+	double im = 0;
+	VecGetSize(x,&size);
+	const double* v1;
+	ierr = VecGetArrayRead(x,&v1);CHKERRQ(ierr);
+	const double* v2;
+	ierr = VecGetArrayRead(Usy,&v2);CHKERRQ(ierr);
+	for(int i=0;i<size/2;i++){
+		double a =v1[i*2 + 0];
+		double b =v1[i*2 + 1];
+		double c =v2[i*2 + 0];
+		double d =v2[i*2 + 1];
+
+		real += a*c + b*d;
+		im   += b*c - a*d;
+	}
+	ierr = VecRestoreArrayRead(x,&v1);CHKERRQ(ierr);
+	ierr = VecRestoreArrayRead(Usy,&v2);CHKERRQ(ierr);
+
+
+	vec2tree(Ux,temp);
+	vec2tree(y,mask);
+	temp->ConjMultiply(mask,1);
+
+
+	std::cout << real << std::endl;
+	std::cout << im << std::endl;
+	std::vector<double> xGsy = temp->Integrate();
+
+	std::cout << "=================================" << std::endl;
+	std::cout << xGsy[0] << std::endl;
+	std::cout << xGsy[1] << std::endl;
+
+	PetscRandomDestroy(&r);
+	return 0;
+}
+
+
+
+#undef __FUNCT__
+#define __FUNCT__ "comp_inc_test"
+int comp_inc_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	int data_dof = 2;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	//////////////////////////////////////////////////////////////
+	// Set up the source and detector locations
+	//////////////////////////////////////////////////////////////
+
+	int create_number = 2;
+	pt_src_locs = equiplane(create_number,0,0.1);
+	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
+	int N_s = pt_src_locs.size()/3;
+
+	std::vector<double> d_locs = equiplane(create_number,0,0.9);
+	std::cout << "Number gnereated=" << d_locs.size() << std::endl;
+	int N_d = d_locs.size()/3;
+
+	{
+		coeffs.clear();
+		for(int i=0;i<N_s*data_dof;i++){
+			coeffs.push_back((i%2 == 0) ? 1 : 0 ); // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
+		}
+	}
+
+	//////////////////////////////////////////////////////////////
+	// Set up FMM stuff
+	//////////////////////////////////////////////////////////////
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+
+	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
+	temp_c->bndry = bndry;
+	temp_c->kernel = kernel_conj;
+	temp_c->fn = zero_fn;
+	temp_c->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = mask_fn;
+	mask->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);
+	eta->bndry = bndry;
+	eta->kernel = kernel;
+	eta->fn = eta2_fn;
+	eta->f_max = .01;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	temp->SetupFMM(fmm_mat);
+
+	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
+	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
+	temp_c->SetupFMM(fmm_mat_c);
+
+	// Tree sizes
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+
+	//////////////////////////////////////////////////////////////
+	// Set up incident field operators
+	//////////////////////////////////////////////////////////////
+
+	std::cout << "Set up incident field operator" << std::endl;
+	Vec coeffs_vec;
+	VecCreateMPI(comm,PETSC_DECIDE,N_s*data_dof,&coeffs_vec);
+
+	IncidentData incident_data;
+	incident_data.bndry = bndry;
+	incident_data.kernel = kernel;
+	incident_data.fn = phi_0_fn;
+	incident_data.coeffs = &coeffs;
+	incident_data.mask = mask;
+	incident_data.comm = comm;
+
+	// forward operator is direct evaluation
+	Mat U_mat;
+	MatCreateShell(comm,m,N_s*data_dof,M,N_s*data_dof,&incident_data,&U_mat); // not sure about the sizes here...
+	MatShellSetOperation(U_mat,MATOP_MULT,(void(*)(void))incident_mult);
+
+	IncidentTransData inc_trans_data;
+	inc_trans_data.comm = comm;
+	inc_trans_data.mask = mask;
+	inc_trans_data.temp_c = temp_c;
+	inc_trans_data.src_coord = pt_src_locs;
+
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat Ut_mat;
+	MatCreateShell(comm,N_s*data_dof,m,N_s*data_dof,M,&inc_trans_data,&Ut_mat); // not sure about the sizes here
+	MatShellSetOperation(Ut_mat,MATOP_MULT,(void(*)(void))incident_transpose_mult);
+
+	//////////////////////////////////////////////////////////////
+	// Randomized, low rank factorization of incident field operator
+	//////////////////////////////////////////////////////////////
+
+
+	std::cout << "Set up Randomized QR" << std::endl;
+	// Need to define a process grid
+	int size;
+	ierr = MPI_Comm_size(comm, &size); CHKERRQ(ierr);
+	El::Grid grid(comm,size);
+
+	El::DistMatrix<double> Q(grid);
+	El::DistMatrix<double> Q_tilde(grid);
+	El::DistMatrix<double> R_tilde(grid);
+	RandQRData randqrdata;
+	randqrdata.A = &U_mat;
+	randqrdata.Atrans = &Ut_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = m;
+	randqrdata.n = N_s*data_dof;
+	randqrdata.M = M;
+	randqrdata.N = N_s*data_dof;
+	randqrdata.grid = &grid;
+
+	std::cout << "Beginning Randomized QR" << std::endl;
+	ierr = RandQR(&randqrdata, 1, 4, 1); CHKERRQ(ierr);
+	std::cout << "Finished with Randomized QR" << std::endl;
+
+	int l1 = Q.Height();
+	assert(l1 == N);
+	int R_s = Q.Width();
+
+	// let's see if the matrix Q is orthogonal
+	/*
+	El::DistMatrix<double> eye(grid);
+	El::Zeros(eye,R_s,R_s);
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Q,1.0,eye);
+	El::Display(eye);
+	*/
+
+	std::cout << "Create U_hat" << std::endl;
+	// Create the transformed incident field
+	El::DistMatrix<double> U_hat(grid);
+	El::Zeros(U_hat,N,R_s);
+	El::Gemm(El::NORMAL,El::TRANSPOSE,1.0,Q,R_tilde,0.0,U_hat);
+
+
+
+	//////////////////////////////////////////////////////////////
+	// Create the scattered field
+	//////////////////////////////////////////////////////////////
+	// Set up the G and Gt operators
+	std::vector<double> detector_samples = temp_c->ReadVals(d_locs); //Not sure exactly what this will do...
+	pvfmm::PtFMM_Tree* Gt_tree = temp_c->CreatePtFMMTree(d_locs, detector_samples, kernel_conj);
+
+	InvMedData g_data;
+	g_data.temp = temp;
+	g_data.phi_0 = mask;
+	g_data.src_coord = d_locs; // for G_mult src_coord is really the detector coordinates
+	g_data.pt_tree = Gt_tree;
+	g_data.filter = false; // REMEMBER TO SET FILTER TO TRUE LATER!!!!!!!!
+
+	Mat G_mat;
+	MatCreateShell(comm,N_d*data_dof,n,N_d*data_dof,N,&g_data,&G_mat); // not sure about the sizes here...
+	MatShellSetOperation(G_mat,MATOP_MULT,(void(*)(void))G_mult);
+
+	// create the transpose of the incident field operator. This is a particle fmm
+	Mat Gt_mat;
+	MatCreateShell(comm,n,N_d*data_dof,N,N_d*data_dof,&g_data,&Gt_mat); // not sure about the sizes here...
+	MatShellSetOperation(Gt_mat,MATOP_MULT,(void(*)(void))Gt_mult);
+
+
+	//first get the column vectors of U_hat
+	std::cout << "Beginning computing transformed scattered field" << std::endl;
+	std::vector<Vec> u_hat_vec;
+	for(int i=0;i<R_s;i++){
+			Vec u_hat;
+			VecCreateMPI(comm,n,N,&u_hat);
+			u_hat_vec.push_back(u_hat);
+	}
+	ElMat2Vecs(u_hat_vec,U_hat);
+	std::cout << "dbg1" << std::endl;
+
+	// then multiply by eta and apply G_operator, putting it in a new matrix as we go
+	El::DistMatrix<double> Phi_hat(grid);
+	El::Zeros(Phi_hat,N_d*data_dof,R_s);
+	//std::vector<Vec> phi_hat_vec;
+	std::cout << "dbg2" << std::endl;
+	for(int i=0;i<R_s;i++){
+		vec2tree(u_hat_vec[i],temp);
+		temp->Multiply(eta,1);
+		tree2vec(temp, u_hat_vec[i]);
+		{
+			Vec phi_hat_petsc;
+			VecCreateMPI(comm,N_d*data_dof,N_d*data_dof,&phi_hat_petsc);
+			ierr = MatMult(G_mat,u_hat_vec[i], phi_hat_petsc); CHKERRQ(ierr);
+			ierr = VecView(phi_hat_petsc,PETSC_VIEWER_STDOUT_SELF); CHKERRQ(ierr);
+			Vec2ElMatCol(phi_hat_petsc, Phi_hat, i);
+		}
+	std::cout << "dbg3" << std::endl;
+	}
+	El::Display(Phi_hat);
+
+
+	//////////////////////////////////////////////////////////////
+	// I guess now we need to factorize G
+	//////////////////////////////////////////////////////////////
+	g_data.filter = true; // NEEDS TO BE TRUE FOR THE FACTORIZATION!!!
+
+	randqrdata.A = &G_mat;
+	randqrdata.Atrans = &Gt_mat;
+	randqrdata.Q = &Q;
+	randqrdata.Q_tilde = &Q_tilde;
+	randqrdata.R_tilde = &R_tilde;
+	randqrdata.comm = comm;
+	randqrdata.r = r;
+	randqrdata.m = N_d*data_dof;
+	randqrdata.n = n;
+	randqrdata.M = N_d*data_dof;
+	randqrdata.N = N;
+	randqrdata.grid = &grid;
+
+	std::cout << "Beginning Randomized QR" << std::endl;
+	ierr = RandQR(&randqrdata, 0, 4, 1); CHKERRQ(ierr);
+	std::cout << "Finished with Randomized QR" << std::endl;
+
+	//////////////////////////////////////////////////////////////
+	// Rearrange to a more useable form
+	//////////////////////////////////////////////////////////////
+	std::cout << Q.Height() << std::endl;
+	std::cout << Q.Width() << std::endl;
+	int R_d = Q.Height()/data_dof;
+	El::Display(Q);
+	El::DistMatrix<double> G_hat(grid);
+	El::Zeros(G_hat,R_d*data_dof,N);
+	El::Gemm(El::TRANSPOSE,El::TRANSPOSE,1.0,R_tilde,Q_tilde,0.0,G_hat);
+
+	El::DistMatrix<double> Phi_2hat(grid);
+	El::Zeros(Phi_2hat,R_d,R_s); // THIS SIZE SEEMS SUSPICIOUS
+	std::cout << Phi_hat.Height() << std::endl;
+	std::cout << Phi_hat.Width() << std::endl;
+	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Phi_hat,0.0,Phi_2hat);
+	El::Display(Phi_2hat);
+	
+
+	//////////////////////////////////////////////////////////////
+	// Solve with regularization
+	//////////////////////////////////////////////////////////////
+
+
+
+
+	/*
+	std::cout << "dbg4" << std::endl;
+	PetscRandomDestroy(&r);
+	std::cout << "dbg5" << std::endl;
+	for(int i=0;i<R_s;i++){
+		VecDestroy(&u_hat_vec[i]);
+		std::cout << "dbg6" << std::endl;
+	}
+	std::cout << "dbg7" << std::endl;
+	delete fmm_mat;
+	std::cout << "dbg7" << std::endl;
+	delete fmm_mat_c;
+	std::cout << "dbg7" << std::endl;
+
+	//delete temp;
+	std::cout << "dbg7" << std::endl;
+	//delete temp_c;
+	std::cout << "dbg7" << std::endl;
+	//delete eta;
+	std::cout << "dbg7" << std::endl;
+	//delete mask;
+	std::cout << "dbg7" << std::endl;
+	*/
+
+
+	return 0;
+}
+
+int filter_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+
+	std::vector<double> coeff_scaling = {1};
+
+	Vec x;
+	std::cout << "n: " << n <<std::endl;
+	std::cout << "N: " << N <<std::endl;
+	ierr = VecCreateMPI(comm,n,N,&x); CHKERRQ(ierr);
+	ierr = VecSetRandom(x,r); CHKERRQ(ierr);
+	vec2tree(x,temp);
+	temp->Write2File("../results/notsmoothed",0);
+	temp->FilterChebTree(coeff_scaling);
+	temp->Write2File("../results/smoothed",0);
+
+	PetscRandomDestroy(&r);
+	delete temp;
+	return 0;
+
+}
+
+
+
 
 int main(int argc, char* argv[]){
 	static char help[] = "\n\
@@ -1433,15 +2434,26 @@ int main(int argc, char* argv[]){
 //	multiply_test(comm);
 //	multiply_test2(comm);
 //	multiply_test3(comm);
-//	conj_multiply_test(comm);
+	//conj_multiply_test(comm);
+	//conj_multiply_test2(comm);
 //	copy_test(comm);
 //	int_test(comm);
+//	int_test2(comm);
+	//int_test3(comm);
 //	ptfmm_trg2tree_test(comm);
 //	mult_op_test(comm);
 //	spectrum_test(comm);
 //	mgs_test(comm);
-	compress_incident_test(comm);
+//  compress_incident_test(comm);
+	//factorize_G_test(comm);
+	//randqr_test1(comm);
+	//randqr_test2(comm);
+//	GGt_test(comm);
+//	UUt_test(comm);
+  comp_inc_test(comm);
+	//filter_test(comm);
 	El::Finalize();
+	PetscFinalize();
 
 	return 0;
 }

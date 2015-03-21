@@ -191,8 +191,8 @@ void cs_fn(const double* coord, int n, double* out){
 			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			double r = sqrt(r_2);
 			// Assumes that k = 1;
-			if(dof>1) out[i*dof+0]= cos(r);
-			if(dof>1) out[i*dof+1]= sin(r);
+			if(dof>1) out[i*dof+0]= cos(10*r);
+			if(dof>1) out[i*dof+1]= sin(10*r);
 		}
 	}
 
@@ -216,14 +216,14 @@ void sc_fn(const double* coord, int n, double* out){
 
 //sin - icos
 void scc_fn(const double* coord, int n, double* out){
-	int COORD_DIM = 3;
+	int coord_dim = 3;
 	int dof=2;
 	for(int i=0;i<n;i++){
-		const double* c=&coord[i*COORD_DIM];
+		const double* c=&coord[i*coord_dim];
 		{
 			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
 			double r=sqrt(r_2);
-			// Assumes that k = 1;
+			// assumes that k = 1;
 			if(dof>1) out[i*dof+0]= sin(r);
 			if(dof>1) out[i*dof+1]= -cos(r);
 		}
@@ -231,7 +231,22 @@ void scc_fn(const double* coord, int n, double* out){
 
 }
 
+//(sin + icos)^2
+void sc2_fn(const double* coord, int n, double* out){
+	int coord_dim = 3;
+	int dof=2;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*coord_dim];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r=sqrt(r_2);
+			// assumes that k = 1;
+			if(dof>1) out[i*dof+0]= sin(r)*sin(r) - cos(r)*cos(r);
+			if(dof>1) out[i*dof+1]= 2*sin(r)*cos(r);
+		}
+	}
 
+}
 //2sin
 void twosin_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
@@ -344,6 +359,19 @@ void linear_fn(const double* coord, int n, double* out){
 	}
 }
 
+void prod_fn(const double* coord, int n, double* out){
+	int COORD_DIM=3;
+	int dof=2;
+	double a=-160;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof+0]=c[0]*c[1]*c[2];
+			out[i*dof+1]=-c[0]*c[1]*c[2];
+		}
+	}
+}
+
 
 void linear_prod_fn(const double* coord, int n, double* out){
 	int COORD_DIM=3;
@@ -376,7 +404,7 @@ void pt_src_sol_fn(const double* coord, int n, double* out, const double* src_co
 	}
 }
 
-void linear_comb_of_pt_src(const double* coord, int n, double* out, std::vector<double> coeffs, std::vector<double> src_coords){
+void linear_comb_of_pt_src(const double* coord, int n, double* out, const std::vector<double> &coeffs, const std::vector<double> &src_coords){
 	int COORD_DIM = 3;
 	int dof=2;
 	//#pragma omp parallel for
@@ -385,18 +413,14 @@ void linear_comb_of_pt_src(const double* coord, int n, double* out, std::vector<
 		if(dof>1) out[i*dof+1]= 0;
 	}
 	//#pragma omp parallel for
-	for(int j=0; j<coeffs.size();j++){
+	for(int j=0; j<coeffs.size()/dof;j++){
 		for(int i=0;i<n;i++){
 			const double* c=&coord[i*COORD_DIM];
 			const double* s=&src_coords[j*COORD_DIM];
 			double r=sqrt((c[0]-s[0])*(c[0]-s[0])+(c[1]-s[1])*(c[1]-s[1])+(c[2]-s[2])*(c[2]-s[2]));
 			// Assumes that k = 1;
-//			std::cout << j << std::endl;
-//			std::cout << s[0] << std::endl;
-	//		std::cout << s[1] << std::endl;
-		//	std::cout << s[2] << std::endl;
-			if(dof>0) out[i*dof+0] += coeffs[j]*1/(4*M_PI*r)*cos(1*r);
-			if(dof>1) out[i*dof+1] += coeffs[j]*1/(4*M_PI*r)*sin(1*r);
+			if(dof>0) out[i*dof+0] += (coeffs[j*dof]*1/(4*M_PI*r)*cos(1*r) - coeffs[j*dof+ 1]*1/(4*M_PI*r)*sin(1*r));
+			if(dof>1) out[i*dof+1] += (coeffs[j*dof]*1/(4*M_PI*r)*sin(1*r) + coeffs[j*dof+1]*1/(4*M_PI*r)*cos(1*r));
 		}
 	}
 }
@@ -428,4 +452,54 @@ void eta_plus_k2_fn(const  double* coord, int n, double* out){
 			out[i*dof+1] = .1*sin(3*r_2); //complex part
 		}
 	}
+}
+
+
+void mask_fn(const  double* coord, int n, double* out){
+	int dof=2;
+	int COORD_DIM = 3;
+	double min = .25;
+	double max = .75;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof+0] = ((min < c[0] and c[0] < max) and (min < c[1] and c[1] < max) and (min < c[2] and c[2] < max)) ? 1 : 0;
+			out[i*dof+1] = 0;
+		}
+	}
+}
+
+void cmask_fn(const  double* coord, int n, double* out){
+	int dof=2;
+	int COORD_DIM = 3;
+	double min = .25;
+	double max = .75;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof+0] = ((min < c[0] and c[0] < max) and (min < c[1] and c[1] < max) and (min < c[2] and c[2] < max)) ? 0 : 1;
+			out[i*dof+1] = 0;
+		}
+	}
+}
+
+void eta2_fn(const  double* coord, int n, double* out){
+  double eta_ = 1;
+  int dof=2;
+  int COORD_DIM = 3;
+  for(int i=0;i<n;i++){
+    const double* c=&coord[i*COORD_DIM];
+    {
+      double sz = 0.01;
+      double r_21=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.5)*(c[2]-0.5);
+      r_21 = sqrt(r_21);
+      double r_22=(c[0]-0.375)*(c[0]-0.375)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.5)*(c[2]-0.5);
+      r_22 = sqrt(r_22);
+      double r_23=(c[0]-0.625)*(c[0]-0.625)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.5)*(c[2]-0.5);
+      r_23 = sqrt(r_23);
+      out[i*dof]=eta_*(r_21<0.11?sz:0.0) + eta_*(r_22<0.075?sz:0.0) + eta_*(r_23<0.1?sz:0.0);
+      //std::cout << out[i] << std::endl;
+      out[i*dof+1] = 0; //complex part
+    }
+  }
 }

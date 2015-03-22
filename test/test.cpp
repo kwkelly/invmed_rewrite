@@ -2491,19 +2491,23 @@ int faims(MPI_Comm &comm){
 	PetscInt N = temp->N;
 	int N_disc = N/2;
 
+	int R_d = 4;
+
 	/////////////////////////////////////////////////////////////////
 	// Eta to Elemental Vec
 	/////////////////////////////////////////////////////////////////
-	El::DistMatrix<double> EtaVec;
+	std::cout << "Perturbation to Elemental Vector" << std::endl;
+	El::DistMatrix<El::Complex<double>> EtaVec;
 	El::Zeros(EtaVec,N_disc,1);
 	tree2elemental(eta,EtaVec);
 
 	/////////////////////////////////////////////////////////////////
 	// Randomize the Incident Field
 	/////////////////////////////////////////////////////////////////
+	std::cout << "Incident Field Randomization" << std::endl;
 	El::DistMatrix<double> rand_coeffs;
 	El::Gaussian(rand_coeffs, N_s*data_dof, 1);
-	coeffs.data() = rand_coeffs.Buffer();
+	coeffs.assign(rand_coeffs.Buffer(),rand_coeffs.Buffer()+N_s*data_dof);
 
 	InvMedTree<FMM_Mat_t>* rand_inc = new InvMedTree<FMM_Mat_t>(comm);
 	rand_inc->bndry = bndry;
@@ -2518,37 +2522,175 @@ int faims(MPI_Comm &comm){
 	// convert the tree into a vector. This vector represents the function
 	// that we passed into the tree constructor (which contains the current 
 	// random coefficients).
-	El::DistMatrix<double> RandomizedIncidentField;
-	El::Zeros(RandomizedIncidentField,N_disc,1);
-	tree2elemental(rand_inc,RandomizedIncidentField);
+	El::DistMatrix<El::Complex<double>> U_rand;
+	El::Zeros(U_rand,N_disc,1);
+	tree2elemental(rand_inc,U_rand);
 	// and normalize it
-	El::Scale(El::TwoNorm(RandomizedIncidentField),RandomizedIncidentField);
+	El::Scale(El::TwoNorm(U_rand),U_rand);
+
+	/////////////////////////////////////////////////////////////////
+	// Compute the scattered field
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Scattered Field Computation" << std::endl;
+
+	El::DistMatrix<El::Complex<double>> Phi;
+	El::Zeros(Phi,N_d,1);
+	elemental2tree(U_rand,temp);
+	temp->Multiply(mask,1);
+	temp->Multiply(eta,1);
+	temp->ClearFMMData();
+	temp->RunFMM();
+	temp->Copy_FMMOutput();
+	std::vector<double> detector_values = temp->ReadVals(d_locs);
+	vec2elemental(detector_values,Phi);
 
 	/////////////////////////////////////////////////////////////////
 	// Low rank factorization of G
 	/////////////////////////////////////////////////////////////////
+	std::cout << "Low Rank Factorization of G" << std::endl;
 		
 	/*
 	 * First we need a random Gaussian vector
 	 */
-	std::vector<double> detector_values(N_d*data_dof);
 
 	El::DistMatrix<double> RandomWeights;
-	El::Gaussian(RandomWeights, N_d*data_dof, 1);
-	detector_values.data() = rand_coeffs.Buffer();
+	El::DistMatrix<El::Complex<double>> Y; // the projection of omaga through G*
+	El::DistMatrix<El::Complex<double>> Y_i;
+	El::Zeros(Y,N_disc,R_d);
 
 
+	for(int i=0;i<R_d;i++){
 
-	Gt_tree->ClearFMMData();
-	std::vector<double> trg_value;
-	pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
+		El::Gaussian(RandomWeights, N_d*data_dof, 1);
+		detector_values.assign(RandomWeights.Buffer(),RandomWeights.Buffer()+N_d*data_dof);
 
-	ierr = VecRestoreArrayRead(U,&dv);CHKERRQ(ierr);
+		Gt_tree->ClearFMMData();
+		std::vector<double> trg_value;
+		pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
 
-	// Insert the values back in
-	temp->Trg2Tree(trg_value);
-	temp->Multiply(mask,1);
-	tree2vec(temp, Y);
+		// Insert the values back in
+		temp->Trg2Tree(trg_value);
+		temp->Multiply(mask,1);
+		El::View(Y, Y_i, 0, i, N_disc, 1);
+		tree2elemental(temp, Y_i);
+	}
+	El::DistMatrix<El::Complex<double>> R; // the projection of omaga through G*
+	El::qr::Explicit(Y, R, El::QRCtrl<double>());
+
+
+	// Now Y is such that G* \approx YY*G*.Thus we can compute GY
+	// Compute it's SVD and then multiply by Q, thus giving the approx 
+	// SVD of G!!!
+	
+	El::DistMatrix<El::Complex<double>> GY;
+	El::Zeros(GY,N_d,R_d);
+	El::DistMatrix<El::Complex<double>> GY_i;
+	for(int i=0;i<R_d;i++){
+		El::View(Y, Y_i, 0, i, N_disc, 1);
+		elemental2tree(Y_i,temp);
+		temp->Multiply(mask,1);
+		temp->ClearFMMData();
+		temp->RunFMM();
+		temp->Copy_FMMOutput();
+		detector_values = temp->ReadVals(d_locs); // this should be size 2*N_d, we must now convert to a complex Elemental mat
+
+
+		El::View(GY, GY_i, 0, i, N_d, 1);
+		vec2elemental(detector_values,GY_i);
+	}
+
+	El::DistMatrix<double> s;
+	El::Zeros(s,R_d,1);
+
+	El::DistMatrix<El::Complex<double>> V;
+	El::Zeros(V,R_d,R_d);
+
+	El::SVD(GY, s, V, El::SVDCtrl<double>());
+
+	std::vector<double> d(R_d);
+	d.assign(s.Buffer(),s.Buffer()+R_d);
+
+	El::DistMatrix<El::Complex<double>> Sigma;
+	El::Zeros(Sigma,R_d,R_d);
+	El::Diagonal(Sigma, d);
+
+	// G \approx GYY* = U\Sigma\V*Y*
+	// So We take V* and multiply by Y*
+	El::DistMatrix<El::Complex<double>> Vt_tilde;
+	El::Zeros(Vt_tilde,R_d,N_disc);
+	El::Complex<double> alpha;
+	El::SetRealPart(alpha,1.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Complex<double> beta;
+	El::SetRealPart(alpha,0.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Gemm(El::ADJOINT,El::ADJOINT,alpha,V,Y,beta,Vt_tilde);
+
+	/////////////////////////////////////////////////////////////////
+	// Transform phi
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Transform the Scattered Field" << std::endl;
+
+	El::DistMatrix<El::Complex<double>> Phi_hat;
+	El::Zeros(Phi_hat,R_d,1);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,GY,Phi,beta,Phi_hat);
+
+
+	/////////////////////////////////////////////////////////////////
+	// Now we have Phi_hat = \Sigma Vt_tilde*(\eta.U_rand)
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Multiply matrix by the incident field" << std::endl;
+	
+	// U_rand is diagonal N_disc x N_disc. Instead of forming it,
+	// we can multiply each row of Vt_tilde pointwise by U_rand
+	El::DistMatrix<El::Complex<double>> Ut_rand;
+	El::Zeros(Ut_rand,1,N_disc);
+	El::Transpose(U_rand,Ut_rand);
+
+	El::DistMatrix<El::Complex<double>> Vt_tildeU;
+	El::Zeros(Vt_tildeU,R_d,N_disc);
+
+	El::DistMatrix<El::Complex<double>> VU_i;
+	El::Zeros(VU_i,1,N_disc);
+	for(int i=0;i<R_d;i++){
+		El::View(Vt_tilde, VU_i, i, 0, 1, N_disc);
+		El::Hadamard(Ut_rand,VU_i,VU_i);
+	}
+
+	/////////////////////////////////////////////////////////////////
+	// Now we have Phi_hat = \Sigma Vt_tildeU_rand \eta
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Rest of the Multiplcations"<<  std::endl
+
+	El::DistMatrix<El::Complex<double>> G_eps;
+	El::Zeros(G_eps,R_d,N_disc);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,Sigma,Vt_tildeU,beta,G_eps);
+
+	/////////////////////////////////////////////////////////////////
+	// Solve
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Solve"<<  std::endl
+	El::DistMatrix<El::Complex<double>> Eta_recon;
+	El::Zeros(Eta_recon,N_disc,1);
+
+	std::vector<double> gamma(N_disc);
+	std::fill(gamma.begin(),gamma.end(),1.5);
+	El::DistMatrix<El::Complex<double>> Gamma;
+	El::Zeros(Gamma,N_disc,N_disc);
+	El::Diagonal(Gamma,gamma);
+
+	El::Tikhonov(G_eps, Phi_hat, Gamma, Eta_recon, El::TIKHONOV_QR);
+
+	/////////////////////////////////////////////////////////////////
+	// Test
+	/////////////////////////////////////////////////////////////////
+	std::cout << "Test!" << std::endl 
+	elemental2tree(Eta_recon,temp);
+	temp->Add(eta,-1);
+	std::cout << "Relative Error: " << temp->Norm2()/eta->Norm2() << std::endl;
+
 
 
 	return 0;
@@ -2688,7 +2830,8 @@ int main(int argc, char* argv[]){
 //	UUt_test(comm);
   //comp_inc_test(comm);
 	//filter_test(comm);
-	el_test(comm);
+	//el_test(comm);
+	faims(comm);
 	El::Finalize();
 	PetscFinalize();
 

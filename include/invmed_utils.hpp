@@ -625,18 +625,15 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<doubl
 
 
 #undef __FUNCT__
-#define __FUNCT__ "trg2elemental"
-template <class FMM_Mat_t>
-int elemental2tree(const std::vector<double> &trg, El::DistMatrix<El::Complex<double>> &Y){
-	const MPI_Comm* comm=tree->Comm();
-	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+#define __FUNCT__ "vec2elemental"
+int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>> &Y){
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
-	int sz = trg.size();
+	int sz = vec.size();
 	#pragma omp parallel for
 	for(int i=0;i<sz/2; i++){
-		double real = trg[2*i];
-		double imag = trg[2*i+1];
+		double real = vec[2*i];
+		double imag = vec[2*i+1];
 		El::SetRealPart(Y_ptr[i],real);
 		El::SetImagPart(Y_ptr[i],imag);
 	}

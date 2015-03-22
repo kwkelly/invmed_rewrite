@@ -531,6 +531,152 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 	return 0;
 }
 
+
+#undef __FUNCT__
+#define __FUNCT__ "elemental2tree"
+template <class FMM_Mat_t>
+int elemental2tree(El::DistMatrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tree){
+	PetscErrorCode ierr;
+	const MPI_Comm* comm=tree->Comm();
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+
+	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
+
+	int omp_p=omp_get_max_threads();
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+
+	{
+		int Y_size = Y.LocalHeight();
+		std::cout <<Y_size << std::endl;
+		int data_dof=Y_size/(n_coeff3*nlist.size());
+		std::cout <<data_dof << std::endl;
+		int SCAL_EXP = 1;
+
+		El::Complex<double> *Y_ptr = Y.Buffer();
+
+		#pragma omp parallel for
+		for(size_t tid=0;tid<omp_p;tid++){
+			size_t i_start=(nlist.size()* tid   )/omp_p;
+			size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+			for(size_t i=i_start;i<i_end;i++){
+				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+				double s=std::pow(2.0,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
+
+				size_t Y_offset=i*n_coeff3;
+				for(size_t j=0;j<n_coeff3;j++){
+					//std::cout << j << " : " << PetscRealPart(Y_ptr[j+Y_offset])*s << std::endl;
+					double real = El::RealPart(Y_ptr[j+Y_offset])*s;
+					double imag = El::ImagPart(Y_ptr[j+Y_offset])*s;
+					//std::cout << real << std::endl;
+					//std::cout << imag << std::endl;
+					coeff_vec[j]=real;
+					coeff_vec[j+n_coeff3]=imag;
+				}
+				nlist[i]->DataDOF()=2;
+			}
+		}
+	}
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "tree2elemental"
+template <class FMM_Mat_t>
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<double>> &Y){
+	PetscErrorCode ierr;
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+
+	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
+
+	int omp_p=omp_get_max_threads();
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+
+	{
+		int Y_size = Y.LocalHeight();
+		int data_dof=Y_size/(n_coeff3*nlist.size());
+		//std::cout << "TREE2VEC HERE " << n_coeff3 << " " << Y_size << " " << nlist.size() << " " << data_dof << " " << n_coeff3 << std::endl;
+		int SCAL_EXP = 1;
+
+		El::Complex<double> *Y_ptr = Y.Buffer();
+
+		#pragma omp parallel for
+		for(size_t tid=0;tid<omp_p;tid++){
+			size_t i_start=(nlist.size()* tid   )/omp_p;
+			size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+			for(size_t i=i_start;i<i_end;i++){
+				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+				double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
+
+				size_t Y_offset=i*n_coeff3;
+				for(size_t j=0;j<n_coeff3;j++){
+					double real = coeff_vec[j]*s;
+					double imag = coeff_vec[j+n_coeff3]*s;
+					El::SetRealPart(Y_ptr[j+Y_offset],real);
+					El::SetImagPart(Y_ptr[j+Y_offset],imag);
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+
+#undef __FUNCT__
+#define __FUNCT__ "trg2elemental"
+template <class FMM_Mat_t>
+int elemental2tree(const std::vector<double> &trg, El::DistMatrix<El::Complex<double>> &Y){
+	const MPI_Comm* comm=tree->Comm();
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+
+	El::Complex<double> *Y_ptr = Y.Buffer();
+	int sz = trg.size();
+	#pragma omp parallel for
+	for(int i=0;i<sz/2; i++){
+		double real = trg[2*i];
+		double imag = trg[2*i+1];
+		El::SetRealPart(Y_ptr[i],real);
+		El::SetImagPart(Y_ptr[i],imag);
+	}
+
+	return 0;
+}
+
+
+template <class FMM_Mat_t>
+int printcoeffs(InvMedTree<FMM_Mat_t> *tree){
+	std::cout << "START Print Coeffs============================" << std::endl;
+	const MPI_Comm* comm=tree->Comm();
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+
+	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
+
+	int omp_p=omp_get_max_threads();
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+
+	{
+		int SCAL_EXP = 1;
+
+		for(size_t tid=0;tid<omp_p;tid++){
+			size_t i_start=(nlist.size()* tid   )/omp_p;
+			size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+			for(size_t i=i_start;i<i_end;i++){
+				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+
+				for(size_t j=0;j<n_coeff3*2;j++){
+					std::cout << coeff_vec[j] << std::endl;
+				}
+			}
+		}
+	}
+
+	std::cout << "END Print Coeffs============================" << std::endl;
+	return 0;
+}
+
+
 #undef __FUNCT__
 #define __FUNCT__ "MatSetColumnVector"
 PetscErrorCode  MatSetColumnVector(Mat A,Vec yy,PetscInt col)
@@ -1060,10 +1206,6 @@ PetscErrorCode RandQR(RandQRData* randqrdata, const int q, const double compress
 	// compute QtildeR = A
 	//El::DistMatrix<double> R;
 	El::qr::Explicit(*Q_tilde,*R_tilde,El::QRCtrl<double>());
-
-
-
-
 
 
 

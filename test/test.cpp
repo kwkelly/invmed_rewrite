@@ -2010,7 +2010,7 @@ int comp_inc_test(MPI_Comm &comm){
 	// Set up the source and detector locations
 	//////////////////////////////////////////////////////////////
 
-	int create_number = 2;
+	int create_number = 8;
 	pt_src_locs = equiplane(create_number,0,0.1);
 	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
 	int N_s = pt_src_locs.size()/3;
@@ -2133,12 +2133,14 @@ int comp_inc_test(MPI_Comm &comm){
 	randqrdata.grid = &grid;
 
 	std::cout << "Beginning Randomized QR" << std::endl;
-	ierr = RandQR(&randqrdata, 1, 4, 1); CHKERRQ(ierr);
+	ierr = RandQR(&randqrdata, 1, .01, 1); CHKERRQ(ierr);
 	std::cout << "Finished with Randomized QR" << std::endl;
 
 	int l1 = Q.Height();
 	assert(l1 == N);
 	int R_s = Q.Width();
+	std::cout << "R_s: " << R_s << std::endl;
+	std::cout << "l1: " << l1 << std::endl;
 
 	// let's see if the matrix Q is orthogonal
 	/*
@@ -2231,7 +2233,7 @@ int comp_inc_test(MPI_Comm &comm){
 	randqrdata.grid = &grid;
 
 	std::cout << "Beginning Randomized QR" << std::endl;
-	ierr = RandQR(&randqrdata, 0, 4, 1); CHKERRQ(ierr);
+	ierr = RandQR(&randqrdata, 0, .01, 1); CHKERRQ(ierr);
 	std::cout << "Finished with Randomized QR" << std::endl;
 
 	//////////////////////////////////////////////////////////////
@@ -2239,7 +2241,7 @@ int comp_inc_test(MPI_Comm &comm){
 	//////////////////////////////////////////////////////////////
 	std::cout << Q.Height() << std::endl;
 	std::cout << Q.Width() << std::endl;
-	int R_d = Q.Height()/data_dof;
+	int R_d = Q.Width();
 	El::Display(Q);
 	El::DistMatrix<double> G_hat(grid);
 	El::Zeros(G_hat,R_d*data_dof,N);
@@ -2250,6 +2252,9 @@ int comp_inc_test(MPI_Comm &comm){
 	std::cout << Phi_hat.Height() << std::endl;
 	std::cout << Phi_hat.Width() << std::endl;
 	El::Gemm(El::TRANSPOSE,El::NORMAL,1.0,Q,Phi_hat,0.0,Phi_2hat);
+	El::Display(Phi_2hat);
+
+	Phi_2hat.Resize(R_s,R_d);
 	El::Display(Phi_2hat);
 	
 
@@ -2332,6 +2337,237 @@ int filter_test(MPI_Comm &comm){
 	return 0;
 
 }
+
+int el_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = sc_fn;
+	temp->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
+	temp1->bndry = bndry;
+	temp1->kernel = kernel;
+	temp1->fn = zero_fn;
+	temp1->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *temp2 = new InvMedTree<FMM_Mat_t>(comm);
+	temp2->bndry = bndry;
+	temp2->kernel = kernel;
+	temp2->fn = zero_fn;
+	temp2->f_max = 0;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+	std::cout << M << std::endl;
+
+	El::DistMatrix<El::Complex<double>> A;
+	El::Zeros(A,M/2,1); // dividing by data_dof
+
+	tree2elemental(temp,A);
+	elemental2tree(A,temp1);
+
+	temp->Write2File("../results/eltestA",0);
+	temp1->Write2File("../results/eltestB",0);
+	temp->Add(temp1,-1);
+	temp->Write2File("../results/eltestC",0);
+
+	PetscRandomDestroy(&r);
+	delete temp;
+	return 0;
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int faims(MPI_Comm &comm){
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	int data_dof = 2;
+
+	PetscRandom r;
+	PetscRandomCreate(comm,&r);
+	PetscRandomSetSeed(r,time(NULL));
+	PetscRandomSetType(r,PETSCRAND48);
+
+	//////////////////////////////////////////////////////////////
+	// Set up the source and detector locations
+	//////////////////////////////////////////////////////////////
+
+	int create_number = 8;
+	pt_src_locs = equiplane(create_number,0,0.1);
+	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
+	int N_s = pt_src_locs.size()/3;
+
+	std::vector<double> d_locs = equiplane(create_number,0,0.9);
+	std::cout << "Number gnereated=" << d_locs.size() << std::endl;
+	int N_d = d_locs.size()/3;
+
+	{
+		coeffs.clear();
+		for(int i=0;i<N_s*data_dof;i++){
+			coeffs.push_back((i%2 == 0) ? 1 : 0 ); // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
+		}
+	}
+
+	//////////////////////////////////////////////////////////////
+	// Set up FMM stuff
+	//////////////////////////////////////////////////////////////
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+
+	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
+	temp_c->bndry = bndry;
+	temp_c->kernel = kernel_conj;
+	temp_c->fn = zero_fn;
+	temp_c->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = mask_fn;
+	mask->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);
+	eta->bndry = bndry;
+	eta->kernel = kernel;
+	eta->fn = eta2_fn;
+	eta->f_max = .01;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	temp->SetupFMM(fmm_mat);
+
+	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
+	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
+	temp_c->SetupFMM(fmm_mat_c);
+
+	std::vector<double> ds = temp_c->ReadVals(d_locs);
+	pvfmm::PtFMM_Tree* Gt_tree = temp_c->CreatePtFMMTree(d_locs, ds, kernel_conj);
+
+	// Tree sizes
+	PetscInt m = temp->m;
+	PetscInt M = temp->M;
+	PetscInt n = temp->n;
+	PetscInt N = temp->N;
+	int N_disc = N/2;
+
+	/////////////////////////////////////////////////////////////////
+	// Eta to Elemental Vec
+	/////////////////////////////////////////////////////////////////
+	El::DistMatrix<double> EtaVec;
+	El::Zeros(EtaVec,N_disc,1);
+	tree2elemental(eta,EtaVec);
+
+	/////////////////////////////////////////////////////////////////
+	// Randomize the Incident Field
+	/////////////////////////////////////////////////////////////////
+	El::DistMatrix<double> rand_coeffs;
+	El::Gaussian(rand_coeffs, N_s*data_dof, 1);
+	coeffs.data() = rand_coeffs.Buffer();
+
+	InvMedTree<FMM_Mat_t>* rand_inc = new InvMedTree<FMM_Mat_t>(comm);
+	rand_inc->bndry = bndry;
+	rand_inc->kernel = kernel;
+	rand_inc->fn = phi_0_fn;
+	rand_inc->f_max = 4;
+	rand_inc->CreateTree(false);
+
+	// Need to mask it to remove the singularities
+	rand_inc->Multiply(mask,1);
+
+	// convert the tree into a vector. This vector represents the function
+	// that we passed into the tree constructor (which contains the current 
+	// random coefficients).
+	El::DistMatrix<double> RandomizedIncidentField;
+	El::Zeros(RandomizedIncidentField,N_disc,1);
+	tree2elemental(rand_inc,RandomizedIncidentField);
+	// and normalize it
+	El::Scale(El::TwoNorm(RandomizedIncidentField),RandomizedIncidentField);
+
+	/////////////////////////////////////////////////////////////////
+	// Low rank factorization of G
+	/////////////////////////////////////////////////////////////////
+		
+	/*
+	 * First we need a random Gaussian vector
+	 */
+	std::vector<double> detector_values(N_d*data_dof);
+
+	El::DistMatrix<double> RandomWeights;
+	El::Gaussian(RandomWeights, N_d*data_dof, 1);
+	detector_values.data() = rand_coeffs.Buffer();
+
+
+
+	Gt_tree->ClearFMMData();
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
+
+	ierr = VecRestoreArrayRead(U,&dv);CHKERRQ(ierr);
+
+	// Insert the values back in
+	temp->Trg2Tree(trg_value);
+	temp->Multiply(mask,1);
+	tree2vec(temp, Y);
+
+
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2450,8 +2686,9 @@ int main(int argc, char* argv[]){
 	//randqr_test2(comm);
 //	GGt_test(comm);
 //	UUt_test(comm);
-  comp_inc_test(comm);
+  //comp_inc_test(comm);
 	//filter_test(comm);
+	el_test(comm);
 	El::Finalize();
 	PetscFinalize();
 

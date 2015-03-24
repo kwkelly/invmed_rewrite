@@ -18,6 +18,15 @@ struct InvMedData{
 };
 
 
+struct G_data{
+	InvMedTree<FMM_Mat_t>* mask;
+	InvMedTree<FMM_Mat_t>* temp;
+	pvfmm::PtFMM_Tree* pt_tree;
+	std::vector<double> src_coord;
+	bool filter;
+};
+
+
 struct ScatteredData{
 	InvMedTree<FMM_Mat_t>* eta;
 	InvMedTree<FMM_Mat_t>* temp;
@@ -535,7 +544,7 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 #undef __FUNCT__
 #define __FUNCT__ "elemental2tree"
 template <class FMM_Mat_t>
-int elemental2tree(El::DistMatrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tree){
+int elemental2tree(El::Matrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tree){
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -546,7 +555,7 @@ int elemental2tree(El::DistMatrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t>
 	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 
 	{
-		int Y_size = Y.LocalHeight();
+		int Y_size = Y.Height();
 		std::cout <<Y_size << std::endl;
 		int data_dof=Y_size/(n_coeff3*nlist.size());
 		std::cout <<data_dof << std::endl;
@@ -583,7 +592,7 @@ int elemental2tree(El::DistMatrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t>
 #undef __FUNCT__
 #define __FUNCT__ "tree2elemental"
 template <class FMM_Mat_t>
-int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<double>> &Y){
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::Matrix<El::Complex<double>> &Y){
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
 
@@ -593,12 +602,12 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<doubl
 	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 
 	{
-		int Y_size = Y.LocalHeight();
+		int Y_size = Y.Height();
 		int data_dof=Y_size/(n_coeff3*nlist.size());
 		//std::cout << "TREE2VEC HERE " << n_coeff3 << " " << Y_size << " " << nlist.size() << " " << data_dof << " " << n_coeff3 << std::endl;
 		int SCAL_EXP = 1;
 
-		El::Complex<double> *Y_ptr = Y.Buffer();
+		//El::Complex<double> *Y_ptr = Y.Buffer();
 
 		#pragma omp parallel for
 		for(size_t tid=0;tid<omp_p;tid++){
@@ -612,8 +621,15 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<doubl
 				for(size_t j=0;j<n_coeff3;j++){
 					double real = coeff_vec[j]*s;
 					double imag = coeff_vec[j+n_coeff3]*s;
-					El::SetRealPart(Y_ptr[j+Y_offset],real);
-					El::SetImagPart(Y_ptr[j+Y_offset],imag);
+					//std::cout << "j+Y_offset" << j+Y_offset << std::endl;
+					//std::cout << "real" << real << std::endl;
+					//std::cout << "imag" << imag << std::endl;
+					El::Complex<double> val;
+					El::SetRealPart(val,real);
+					El::SetImagPart(val,imag);
+					Y.Set(j+Y_offset,0,val);
+					//El::SetRealPart(Y_ptr[j+Y_offset],real);
+					//El::SetImagPart(Y_ptr[j+Y_offset],imag);
 				}
 			}
 		}
@@ -626,7 +642,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<doubl
 
 #undef __FUNCT__
 #define __FUNCT__ "vec2elemental"
-int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>> &Y){
+int vec2elemental(const std::vector<double> &vec, El::Matrix<El::Complex<double>> &Y){
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
 	int sz = vec.size();
@@ -636,6 +652,21 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 		double imag = vec[2*i+1];
 		El::SetRealPart(Y_ptr[i],real);
 		El::SetImagPart(Y_ptr[i],imag);
+	}
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "elemental2vec"
+int elemental2vec(El::Matrix<El::Complex<double>> &Y, std::vector<double> &vec){
+
+	El::Complex<double> *Y_ptr = Y.Buffer();
+	int sz = vec.size();
+	#pragma omp parallel for
+	for(int i=0;i<sz/2; i++){
+		vec[2*i] = El::RealPart(Y_ptr[i]);
+		vec[2*i+1] = El::ImagPart(Y_ptr[i]);
 	}
 
 	return 0;
@@ -1522,4 +1553,58 @@ PetscErrorCode LR_mult(Mat M, Vec U, Vec Y){
 	VecDestroy(&v);
 
 	return ierr;
+}
+
+
+#undef __FUNCT__
+#define __FUNCT__ "G_func"
+int G_func(El::Matrix<El::Complex<double>> &x, El::Matrix<El::Complex<double>> &y, G_data &g_data){
+
+	// This function simply computes the convolution of G with an input U
+	// and then gets only the output at the detector locations
+	InvMedTree<FMM_Mat_t>* temp = g_data.temp;
+	InvMedTree<FMM_Mat_t>* mask = g_data.mask;
+	std::vector<double> detector_coord = g_data.src_coord;
+	bool filter = g_data.filter;
+
+	elemental2tree(x,temp);
+	temp->Multiply(mask,1);
+	temp->ClearFMMData();
+	temp->RunFMM();
+	temp->Copy_FMMOutput();
+	std::vector<double> detector_values = temp->ReadVals(detector_coord);
+
+	vec2elemental(detector_values,y);
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "Gt_func"
+int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> &x, G_data &g_data){
+
+	std::vector<double> detector_coord = g_data.src_coord;
+	pvfmm::PtFMM_Tree* Gt_tree = g_data.pt_tree;
+	InvMedTree<FMM_Mat_t>* temp = g_data.temp;
+	InvMedTree<FMM_Mat_t>* mask = g_data.mask;
+
+	int n = y.Height();
+	std::vector<double> detector_values(n*2);
+
+	elemental2vec(y,detector_values);
+	//El::Display(y,"y");
+	//std::cout << "dv" <<std::endl;
+	//for(int i = 0;i<n*2;i++){
+	//	std::cout << detector_values[i] <<std::endl;
+	//}
+
+	Gt_tree->ClearFMMData();
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
+
+	// Insert the values back in
+	temp->Trg2Tree(trg_value);
+	temp->Multiply(mask,1);
+	tree2elemental(temp, x);
+
+	return 0;
 }

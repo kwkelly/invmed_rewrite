@@ -2488,6 +2488,123 @@ int el_test(MPI_Comm &comm){
 
 
 
+int UfuncUtfunc_test(MPI_Comm &comm){
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	int data_dof = 2;
+
+	std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
+	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
+	
+	pt_src_locs = {.5,.5,.5};
+	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
+	int n_pt_srcs = pt_src_locs.size()/3;
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
+	temp_c->bndry = bndry;
+	temp_c->kernel = kernel_conj;
+	temp_c->fn = zero_fn;
+	temp_c->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
+	temp1->bndry = bndry;
+	temp1->kernel = kernel;
+	temp1->fn = zero_fn;
+	temp1->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	mask->Write2File("../results/mask",0);
+
+	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	temp->SetupFMM(fmm_mat);
+
+	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
+	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
+	temp_c->SetupFMM(fmm_mat_c);
+
+	int m = temp->m;
+	int M = temp->M;
+	int n = temp->n;
+	int N = temp->N;
+	int n_detectors = detector_coord.size()/3;
+
+	U_data u_data;
+	u_data.temp = temp;
+	u_data.temp_c = temp_c;
+	u_data.mask = mask;
+	u_data.src_coord = detector_coord;
+	u_data.bndry = bndry;
+	u_data.kernel=kernel;
+	u_data.fn = phi_0_fn;
+	u_data.coeffs=&coeffs;
+	u_data.comm=comm;
+
+
+	{
+		coeffs.clear();
+		coeffs.resize(n_detectors*data_dof);
+		for(int i=0;i<n_detectors*data_dof;i++){
+			coeffs[i] = 0; // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
+		}
+	}
+
+	El::Matrix<El::Complex<double>> x;
+	El::Gaussian(x,n_detectors,1);
+
+	El::Matrix<El::Complex<double>> y;
+	El::Gaussian(y,M/2,1);
+	elemental2tree(y,temp);
+	std::vector<double> filter = {1};
+	temp->FilterChebTree(filter);
+	tree2elemental(temp,y);
+
+	El::Matrix<El::Complex<double>> Ux;
+	El::Zeros(Ux,M/2,1);
+	U_func(x,Ux,u_data);
+	//El::Display(Ux,"Ux");
+	//El::Display(y,"y");
+
+	elemental2tree(y,temp);
+	elemental2tree(Ux,temp1);
+	temp->ConjMultiply(temp1,1);
+	std::vector<double> Uxy = temp->Integrate();
+	std::cout << Uxy[0] << std::endl;
+	std::cout << Uxy[1] << std::endl;
+	std::cout << "=================================" << std::endl;
+
+	// Now do it the other way
+	El::Matrix<El::Complex<double>> Uty;
+	El::Zeros(Uty,n_detectors,1);
+
+	//El::Display(x,"x");
+	Ut_func(y,Uty,u_data);
+
+	std::cout << El::Dot(x,Uty) << std::endl;
+
+	return 0;
+
+}
+
 
 
 
@@ -3004,7 +3121,8 @@ int main(int argc, char* argv[]){
   //comp_inc_test(comm);
 	//filter_test(comm);
 	//el_test(comm);
-	faims(comm);
+	//faims(comm);
+	UfuncUtfunc_test(comm);
 	//GfuncGtfunc_test(comm);
 	El::Finalize();
 	PetscFinalize();

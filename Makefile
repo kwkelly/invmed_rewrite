@@ -41,6 +41,15 @@ $(OBJDIR)/test.o : test/test.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0 -std=c++11               $(PSC_INC) $(EL_INC) -I$(INCDIR) -c $< -o $@
 
+./bin/faims : $(OBJDIR)/faims.o $(OBJDIR)/funcs.o 
+	-@$(MKDIRS) $(dir $@)
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0                 $^   $(PSC_LIB) $(EL_LIB) $(LDFLAGS_PVFMM) -o $@
+
+$(OBJDIR)/faims.o : test/faims.cpp
+	-@$(MKDIRS) $(dir $@)
+	$(CXX_PVFMM) $(CXXFLAGS_PVFMM) -debug -O0 -std=c++11               $(PSC_INC) $(EL_INC) -I$(INCDIR) -c $< -o $@
+
+
 ./bin/new_test : $(OBJDIR)/new_test.o
 	-@$(MKDIRS) $(dir $@)
 	$(CXX_PVFMM) $(CXXFLAGS_PVFMM)                  $^   $(PSC_LIB) $(LDFLAGS_PVFMM) -o $@

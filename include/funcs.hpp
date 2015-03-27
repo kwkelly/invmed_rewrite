@@ -4,6 +4,8 @@
 
 void eta_fn(const double* coord, int n, double* out);
 
+void eta_smooth_fn(const double* coord, int n, double* out);
+
 void pt_sources_fn(const double* coord, int n, double* out);
 
 void zero_fn(const double* coord, int n, double* out);

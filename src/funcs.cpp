@@ -21,6 +21,24 @@ void eta_fn(const  double* coord, int n, double* out){
 	}
 }
 
+// 0 outside of a sphere of radius 0.1, 0.01 inside that.
+void eta_smooth_fn(const  double* coord, int n, double* out){
+	double eta_ = 1;
+	int dof=2;
+	int COORD_DIM = 3;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			r_2 = sqrt(r_2);
+			out[i*dof]= (r_2<0.1 ? exp(-1/(.1-r_2)) : 0.0);
+			out[i*dof+1] = 0; //complex part
+		}
+	}
+}
+
+
+
 // Using gaussians to approximate pt sources located neat the
 // edge of the computational domain
 void pt_sources_fn(const double* coord, int n, double* out){

@@ -385,7 +385,7 @@ void prod_fn(const double* coord, int n, double* out){
 		const double* c=&coord[i*COORD_DIM];
 		{
 			out[i*dof+0]=c[0]*c[1]*c[2];
-			out[i*dof+1]=-c[0]*c[1]*c[2];
+			out[i*dof+1]=c[0]*c[1]*c[2];
 		}
 	}
 }

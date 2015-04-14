@@ -33,6 +33,9 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	bool is_initialized;
 
 	PetscInt m,M,n,N,l,L;
+	long long loc_octree_nodes;
+	long long glb_octree_nodes;
+	long long previous_octree_nodes;
 	static std::set< InvMedTree* > m_instances;
 	static std::vector<double> glb_pt_coord;
   static int mult_order;
@@ -69,6 +72,10 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   double Norm2();
   double Norm2c();
 	std::vector<double> Integrate();
+
+	std::vector<double> ChebPoints();
+
+
 
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
 };

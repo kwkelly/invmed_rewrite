@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include "petscsys.h"
 #include "El.hpp"
+#include "par_scan/gen_scan.hpp"
 
 #pragma once
 
@@ -26,6 +27,18 @@ struct G_data{
 	bool filter;
 };
 
+struct U_data{
+	InvMedTree<FMM_Mat_t>* mask;
+	InvMedTree<FMM_Mat_t>* temp;
+	InvMedTree<FMM_Mat_t>* temp_c;
+	std::vector<double> src_coord;
+	pvfmm::BoundaryType bndry;
+	const pvfmm::Kernel<double>* kernel;
+	void (*fn)(const  double* coord, int n, double* out);
+	std::vector<double> *coeffs;
+	MPI_Comm comm;
+};
+
 
 struct ScatteredData{
 	InvMedTree<FMM_Mat_t>* eta;
@@ -38,6 +51,12 @@ struct QRData{
 	Mat *Q;
 	Mat *R;
 };
+
+
+int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<int> &output_sizes, std::vector<int> &sendcnts, std::vector<int> &sdispls, std::vector<int> &recvcnts, std::vector<int> &rdispls, MPI_Comm comm);
+
+template <typename T>
+void op(T& v1, const T& v2);
 
 
 struct RandQRData{
@@ -423,7 +442,16 @@ int mult(Mat M, Vec U, Vec Y){
 
 	// Sample at the points in src_coord, then apply the transpose
 	// operator.
+	temp->Write2File("../results/mult_temp",0);
+	
+	for(int i = 0;i<src_coord.size();i++){
+		std::cout << src_coord[i] << std::endl;
+	}
+	std::cout << "========================" << std::endl;
 	std::vector<double> src_values = temp->ReadVals(src_coord);
+	for(int i = 0;i<src_values.size();i++){
+		std::cout << src_values[i] << std::endl;
+	}
 	
 	pvfmm::Profile::Tic("Particle_FMM",comm,true);
 	pt_tree->ClearFMMData();
@@ -543,25 +571,46 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 
 #undef __FUNCT__
 #define __FUNCT__ "elemental2tree"
-template <class FMM_Mat_t>
-int elemental2tree(El::Matrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tree){
+template <class FMM_Mat_t, typename El_Complex_Mat_t>
+int elemental2tree(El_Complex_Mat_t &Y, InvMedTree<FMM_Mat_t> *tree){
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int rank, size;
+	MPI_Comm_size(*comm,&size);
+	MPI_Comm_rank(*comm,&rank);
 
 	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
 
 	int omp_p=omp_get_max_threads();
 	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 
+
 	{
-		int Y_size = Y.Height();
-		std::cout <<Y_size << std::endl;
-		int data_dof=Y_size/(n_coeff3*nlist.size());
-		std::cout <<data_dof << std::endl;
+		int data_dof=2;
 		int SCAL_EXP = 1;
 
-		El::Complex<double> *Y_ptr = Y.Buffer();
+		// get the input and output sizes for everyone
+		std::vector<int> input_sizes(size);
+		std::vector<int> output_sizes(size);
+		int m = (tree->m)/data_dof;
+		int el_l_sz = Y.LocalHeight();
+
+		MPI_Allgather(&el_l_sz, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,*comm);
+		MPI_Allgather(&m, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,*comm);
+
+		std::vector<int> sendcnts;
+		std::vector<int> sdispls;
+		std::vector<int> recvcnts;
+		std::vector<int> rdispls;
+
+		std::vector<El::Complex<double>> indata(input_sizes[rank]);
+		indata.assign(Y.Buffer(),Y.Buffer()+indata.size());
+		std::vector<El::Complex<double>> outdata(output_sizes[rank]);
+
+		comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, *comm);
+
+		El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],*comm);
 
 		#pragma omp parallel for
 		for(size_t tid=0;tid<omp_p;tid++){
@@ -573,11 +622,8 @@ int elemental2tree(El::Matrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tr
 
 				size_t Y_offset=i*n_coeff3;
 				for(size_t j=0;j<n_coeff3;j++){
-					//std::cout << j << " : " << PetscRealPart(Y_ptr[j+Y_offset])*s << std::endl;
-					double real = El::RealPart(Y_ptr[j+Y_offset])*s;
-					double imag = El::ImagPart(Y_ptr[j+Y_offset])*s;
-					//std::cout << real << std::endl;
-					//std::cout << imag << std::endl;
+					double real = El::RealPart(outdata[j+Y_offset])*s;
+					double imag = El::ImagPart(outdata[j+Y_offset])*s;
 					coeff_vec[j]=real;
 					coeff_vec[j+n_coeff3]=imag;
 				}
@@ -589,25 +635,137 @@ int elemental2tree(El::Matrix<El::Complex<double>> &Y, InvMedTree<FMM_Mat_t> *tr
 	return 0;
 }
 
+template <typename T>
+void op(T& v1, const T& v2){
+	v1+=v2;
+}
+
+int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<int> &output_sizes, std::vector<int> &sendcnts, std::vector<int> &sdispls, std::vector<int> &recvcnts, std::vector<int> &rdispls, MPI_Comm comm){
+	int rank, size;
+	MPI_Comm_size(comm, &size);
+	MPI_Comm_rank(comm, &rank);
+
+	// compute size differences
+	std::vector<int> size_diff(size);
+
+	#pragma omp parallel for
+	for(int i=0;i<size;i++){
+		size_diff[i] = input_sizes[i] - output_sizes[i];
+	}
+
+	// first we compute the sendcnts
+	sendcnts.clear();
+	sendcnts.resize(size);
+	std::fill(sendcnts.begin(),sendcnts.end(),0);
+
+	for(int i=0;i<size;i++){
+		for(int j=0;j<size;j++){
+			if(rank == i && i == j) sendcnts[j] = (output_sizes[j] < input_sizes[j]) ? output_sizes[j] : input_sizes[j];
+			else{ // then we can take away from this one
+				if((size_diff[i] >= 0) && size_diff[j] < 0){
+					int snd = std::min(abs(size_diff[j]),abs(size_diff[i]));
+					size_diff[i] -= snd;
+					size_diff[j] += snd;
+					if(i == rank){
+						sendcnts[j] = snd;
+					}
+				}
+			}
+		}
+	}
+
+	// reset the difference array
+	#pragma omp parallel for
+	for(int i=0;i<size;i++){
+		size_diff[i] = input_sizes[i] - output_sizes[i];
+	}
+	recvcnts.clear();
+	recvcnts.resize(size);
+	std::fill(recvcnts.begin(),recvcnts.end(),0);
+
+	for(int i=0;i<size;i++){
+		for(int j=0;j<size;j++){
+			if(rank == i && i == j) recvcnts[j] = (output_sizes[j] < input_sizes[j]) ? output_sizes[j] : input_sizes[j];
+			else{ // then we can take away from this one
+				if((size_diff[i] < 0) && size_diff[j] > 0){
+					int recv = std::min(abs(size_diff[j]),abs(size_diff[i]));
+					size_diff[i] += recv;
+					size_diff[j] -= recv;
+					if(i == rank){
+						recvcnts[j] = recv;
+					}
+				}
+			}
+		}
+	}
+
+	sdispls = sendcnts;
+	ex_scan(sdispls);
+
+	rdispls = recvcnts;
+	ex_scan(rdispls);
+
+	/*
+	if(!rank){
+		for(int i=0;i<size;i++) std::cout << input_sizes[i] << " ";
+		std::cout << std::endl;
+		for(int i=0;i<size;i++) std::cout << output_sizes[i] << " ";
+		std::cout << std::endl;
+		for(int i=0;i<size;i++) std::cout << sendcnts[i] << " ";
+		std::cout << std::endl;
+		for(int i=0;i<size;i++) std::cout << recvcnts[i] << " ";
+		std::cout << std::endl;
+		for(int i=0;i<size;i++) std::cout << sdispls[i] << " ";
+		std::cout << std::endl;
+		for(int i=0;i<size;i++) std::cout << rdispls[i] << " ";
+		std::cout << std::endl;
+	}
+	*/
+
+	return 0;
+}
+
+
 #undef __FUNCT__
 #define __FUNCT__ "tree2elemental"
-template <class FMM_Mat_t>
-int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::Matrix<El::Complex<double>> &Y){
+template <class FMM_Mat_t, typename El_Complex_Mat_t>
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	const MPI_Comm* comm=tree->Comm();
+	int rank;
+	int size;
+	MPI_Comm_rank(*comm,&rank);
+	MPI_Comm_size(*comm,&size);
 
 	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
 
 	int omp_p=omp_get_max_threads();
 	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 
+
 	{
-		int Y_size = Y.Height();
-		int data_dof=Y_size/(n_coeff3*nlist.size());
-		//std::cout << "TREE2VEC HERE " << n_coeff3 << " " << Y_size << " " << nlist.size() << " " << data_dof << " " << n_coeff3 << std::endl;
+		int data_dof=2;
 		int SCAL_EXP = 1;
 
-		//El::Complex<double> *Y_ptr = Y.Buffer();
+		// get the input and output sizes for everyone
+		std::vector<int> input_sizes(size);
+		std::vector<int> output_sizes(size);
+		int m = (tree->m)/data_dof;
+		int el_l_sz = Y.LocalHeight();
+
+		MPI_Allgather(&m, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,*comm);
+		MPI_Allgather(&el_l_sz, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,*comm);
+
+		std::vector<int> sendcnts;
+		std::vector<int> sdispls;
+		std::vector<int> recvcnts;
+		std::vector<int> rdispls;
+
+		std::vector<El::Complex<double>> indata(input_sizes[rank]);
+		std::vector<El::Complex<double>> outdata(output_sizes[rank]);
+
+		comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, *comm);
 
 		#pragma omp parallel for
 		for(size_t tid=0;tid<omp_p;tid++){
@@ -617,24 +775,26 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::Matrix<El::Complex<double>> 
 				pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
 				double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
 
-				size_t Y_offset=i*n_coeff3;
+				size_t Y_offset=(i)*n_coeff3;
 				for(size_t j=0;j<n_coeff3;j++){
-					double real = coeff_vec[j]*s;
+					double real = coeff_vec[j]*s; // local indices as in the pvfmm trees
 					double imag = coeff_vec[j+n_coeff3]*s;
-					//std::cout << "j+Y_offset" << j+Y_offset << std::endl;
-					//std::cout << "real" << real << std::endl;
-					//std::cout << "imag" << imag << std::endl;
 					El::Complex<double> val;
 					El::SetRealPart(val,real);
 					El::SetImagPart(val,imag);
-					Y.Set(j+Y_offset,0,val);
-					//El::SetRealPart(Y_ptr[j+Y_offset],real);
-					//El::SetImagPart(Y_ptr[j+Y_offset],imag);
+
+					indata[Y_offset+j] = val;
 				}
 			}
 		}
-	}
 
+		El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],*comm);
+
+		for(int i=0;i<outdata.size();i++){
+			Y.Set(i*size+rank,0,outdata[i]);
+		}
+	}
+	MPI_Barrier(*comm);
 	return 0;
 }
 
@@ -642,7 +802,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::Matrix<El::Complex<double>> 
 
 #undef __FUNCT__
 #define __FUNCT__ "vec2elemental"
-int vec2elemental(const std::vector<double> &vec, El::Matrix<El::Complex<double>> &Y){
+int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>> &Y){
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
 	int sz = vec.size();
@@ -1558,7 +1718,7 @@ PetscErrorCode LR_mult(Mat M, Vec U, Vec Y){
 
 #undef __FUNCT__
 #define __FUNCT__ "G_func"
-int G_func(El::Matrix<El::Complex<double>> &x, El::Matrix<El::Complex<double>> &y, G_data &g_data){
+int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, G_data &g_data){
 
 	// This function simply computes the convolution of G with an input U
 	// and then gets only the output at the detector locations
@@ -1577,7 +1737,7 @@ int G_func(El::Matrix<El::Complex<double>> &x, El::Matrix<El::Complex<double>> &
 	vec2elemental(detector_values,y);
 	return 0;
 }
-
+/*
 #undef __FUNCT__
 #define __FUNCT__ "Gt_func"
 int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> &x, G_data &g_data){
@@ -1608,3 +1768,71 @@ int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> 
 
 	return 0;
 }
+
+#undef __FUNCT__
+#define __FUNCT__ "Ut_func"
+int Ut_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> &x, U_data &u_data){
+
+	InvMedTree<FMM_Mat_t>* temp_c = u_data.temp_c;
+	InvMedTree<FMM_Mat_t>* mask = u_data.mask;
+	std::vector<double> src_coord = u_data.src_coord;
+
+	// get the input data
+	elemental2tree(y,temp_c);
+	temp_c->Multiply(mask,1);
+
+	// integrate
+	temp_c->ClearFMMData();
+	temp_c->RunFMM();
+	temp_c->Copy_FMMOutput();
+
+	// read at srcs
+	std::vector<double> src_values = temp_c->ReadVals(src_coord);
+
+	vec2elemental(src_values,x);	
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "U_func"
+int U_func(El::Matrix<El::Complex<double>> &x, El::Matrix<El::Complex<double>> &y, U_data &u_data){
+	// u  is the vector containing the random coefficients for each of the point sources
+
+	InvMedTree<FMM_Mat_t>* mask = u_data.mask;
+	MPI_Comm comm = u_data.comm;
+
+	std::cout << "dbgu1" << std::endl;
+	elemental2vec(x,*(u_data.coeffs));
+	for(int i=0;i<2;i++){
+		std::cout << "coeffs: " << (*(u_data.coeffs))[i]  << std::endl;
+	}
+	std::cout << "dbgu2" << std::endl;
+
+	// create the tree with the current values of the random vector
+	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
+	std::cout << "dbgu2.0" << std::endl;
+	t->bndry = u_data.bndry;
+	std::cout << "dbgu2.1" << std::endl;
+	t->kernel = u_data.kernel;
+	std::cout << "dbgu2.2" << std::endl;
+	t->fn = u_data.fn;
+	std::cout << "dbgu2.3" << std::endl;
+	t->f_max = 4;
+	std::cout << "dbgu2.4" << std::endl;
+	t->CreateTree(false);
+	std::cout << "dbgu3" << std::endl;
+
+	// convert the tree into a vector. This vector represents the function
+	// that we passed into the tree constructor (which contains the current 
+	// random coefficients).
+	t->Multiply(mask,1);
+	std::cout << "dbgu4" << std::endl;
+	tree2elemental(t,y);
+	std::cout << "dbgu5" << std::endl;
+
+	delete t;
+
+	return 0;
+}
+*/

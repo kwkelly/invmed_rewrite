@@ -45,6 +45,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 add_executable(invmed src/invmed.cpp src/funcs.cpp)
 add_executable(test test/test.cpp src/funcs.cpp)
 add_executable(faims test/faims.cpp src/funcs.cpp)
+add_executable(dist_test test/dist_test.cpp)
 
 find_package(PETSc REQUIRED)
 include_directories(${PETSC_INCLUDES})
@@ -65,4 +66,5 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-offload -O2 -wd3218 -wd2570 -DFFTW3_
 
 target_link_libraries(invmed ${LIBS})
 target_link_libraries(test ${LIBS})
+target_link_libraries(dist_test ${LIBS})
 target_link_libraries(faims ${LIBS})

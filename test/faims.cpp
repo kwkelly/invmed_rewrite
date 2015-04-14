@@ -644,7 +644,6 @@ int main(int argc, char* argv[]){
 
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
-
 	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
 	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
 	InvMedTree<FMM_Mat_t>::tol = REF_TOL;
@@ -657,8 +656,6 @@ int main(int argc, char* argv[]){
 	std::cout << N_pts << std::endl;
 	std::cout << R_d << std::endl;
 	std::cout << k << std::endl;
-	std::cout << "WTF MATE" << std::endl;
-
 
 	faims(comm, R_d, k, N_pts);
 	El::Finalize();

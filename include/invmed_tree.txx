@@ -66,7 +66,7 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 		tree_data.pt_coord=pt_coord;
 	}
 
-	std::cout << "pt_coord len: " << pt_coord.size() << std::endl;
+	//std::cout << "pt_coord len: " << pt_coord.size() << std::endl;
 
 	tree_data.max_pts=1; // Points per octant.
 	tree_data.dim=InvMedTree<FMM_Mat_t>::dim;
@@ -85,7 +85,7 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 		//Create Tree and initialize with input data.
 		(*it)->Initialize(&tree_data);
 		(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
-		std::cout << ((*it)->GetNodeList()).size() << std::endl;
+		//std::cout << ((*it)->GetNodeList()).size() << std::endl;
 
 		// This loop gets the new coordinates or the centers of all the nodes in the octree,
 		// replacing the old starting coordinates.
@@ -153,8 +153,6 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 		(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
 
 
-
-
 		int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
 		size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
 		size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
@@ -162,12 +160,19 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 			long long loc_size=0, glb_size=0;
 			long long loc_nodes=0, glb_nodes=0;
 			std::vector<FMMNode_t*> nlist=(*it)->GetNodeList();
+			long long loc_octree_nodes = ((*it)->GetNGLNodes()).size();
+			long long glb_octree_nodes;
+			long long previous_octree_nodes;
 			for(size_t i=0;i<nlist.size();i++){
 				if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
 					loc_size+=n_coeff3; //nlist[i]->ChebData().Dim();
 					loc_nodes+=n_nodes3;
 				}
 			}
+
+			MPI_Allreduce(&loc_octree_nodes, &glb_octree_nodes, 1, MPI_LONG_LONG , MPI_SUM, *((*it)->Comm()));
+			MPI_Exscan(&loc_octree_nodes, &previous_octree_nodes, 1, MPI_LONG_LONG , MPI_SUM, *((*it)->Comm()));
+			if(myrank == 0) previous_octree_nodes=0;
 			MPI_Allreduce(&loc_size, &glb_size, 1, MPI_LONG_LONG , MPI_SUM, *((*it)->Comm()));
 			MPI_Allreduce(&loc_nodes, &glb_nodes, 1, MPI_LONG_LONG, MPI_SUM, *((*it)->Comm()));
 			(*it)->n=loc_size*(*it)->kernel->ker_dim[0];
@@ -176,11 +181,11 @@ void InvMedTree<FMM_Mat_t>::SetupInvMed(){
 			(*it)->M=glb_size*(*it)->kernel->ker_dim[1];
 			(*it)->l=loc_nodes*(*it)->kernel->ker_dim[0];
 			(*it)->L=glb_nodes*(*it)->kernel->ker_dim[0];
+			(*it)->loc_octree_nodes=loc_octree_nodes;
+			(*it)->glb_octree_nodes=glb_octree_nodes;
+			(*it)->previous_octree_nodes=previous_octree_nodes;
 		}
 
-
-
-		std::cout << ((*it)->GetNodeList()).size() << std::endl;
 	}
 	return;
 }
@@ -500,7 +505,7 @@ void InvMedTree<FMM_Mat_t>::CreateTree(bool adap){
 			//Create Tree and initialize with input data.
 			(*it)->Initialize(&tree_data);
 			(*it)->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,(*it)->bndry);
-			std::cout << ((*it)->GetNodeList()).size() << std::endl;
+			//std::cout << ((*it)->GetNodeList()).size() << std::endl;
 		}
 
 		// recompute all the info for the total sizes of the trees
@@ -531,7 +536,7 @@ void InvMedTree<FMM_Mat_t>::CreateTree(bool adap){
 
 	}
 	// I guess check the size of this???
-	std::cout << (this->GetNodeList()).size() << std::endl;
+	//std::cout << (this->GetNodeList()).size() << std::endl;
 
 	return;
 }
@@ -579,7 +584,7 @@ void InvMedTree<FMM_Mat_t>::Copy(InvMedTree<FMM_Mat_t>* other){
 		//Create Tree and initialize with input data.
 		this->Initialize(&tree_data);
 		this->InitFMM_Tree(InvMedTree<FMM_Mat_t>::adap,this->bndry);
-		std::cout << (this->GetNodeList()).size() << std::endl;
+		//std::cout << (this->GetNodeList()).size() << std::endl;
 
 		this->is_initialized = true;
 	}
@@ -656,7 +661,7 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
 	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
 	std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
-	//for(int i=0)
+
 	size_t n_chebnodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
 
 	std::vector<double> trg_coord;
@@ -673,22 +678,54 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 			}
 		}
 	}
+	std::cout << "trg_coord.size(): "  << trg_coord.size() << std::endl;
 
 	// Now we can create the new octree
+	MPI_Barrier(*comm);
 	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_value, trg_coord, *comm );
-	std::cout << "after new tree" << std::endl;
 	// Load matrices.
 	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
-	std::cout << "after matrices" << std::endl;
 	matrices->Initialize(mult_order, *comm, kernel);
-	std::cout << "after init" << std::endl;
 
 	// FMM Setup
 	pt_tree->SetupFMM(matrices);
-	std::cout << "after setup" << std::endl;
 
 	return pt_tree;
 }
+
+template <class FMM_Mat_t>
+std::vector<double> InvMedTree<FMM_Mat_t>::ChebPoints(){
+
+	int SCAL_EXP = 1;
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm_const=this->Comm();
+	MPI_Comm* comm = const_cast<MPI_Comm*>(comm_const);
+	///////////////
+	// Get trg_coord. These are the locations of the chebyshev nodes in each of the nodes of the octree.
+	///////////////
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
+	std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
+
+	size_t n_chebnodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+
+	std::vector<double> trg_coord;
+	std::vector<FMMNode_t*> nlist=this->GetNodeList();
+	for(size_t i=0;i<nlist.size();i++){
+		if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+
+			double s=pow(0.5,nlist[i]->Depth());
+			double* c=nlist[i]->Coord();
+			for(int j=0;j<n_chebnodes3*3;j=j+3){
+				trg_coord.push_back(c[0] + cheb_node_coord3[j+0]*s);
+				trg_coord.push_back(c[1] + cheb_node_coord3[j+1]*s);
+				trg_coord.push_back(c[2] + cheb_node_coord3[j+2]*s);
+			}
+		}
+	}
+	return trg_coord;
+}
+
 
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::Trg2Tree(std::vector<double> &trg_value){
@@ -748,24 +785,52 @@ std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
 	//std::cout << "readvals" << std::endl;
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 
+	const MPI_Comm* comm=this->Comm();
+	int rank, size;
+	MPI_Comm_size(*comm, &size);
+	MPI_Comm_rank(*comm, &rank);
+
 	int dim=InvMedTree<FMM_Mat_t>::dim;
 	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
 	assert(coord.size()%dim == 0);
+	int cs = coord.size();
+	int total_cs;
+	MPI_Allreduce(&cs,&total_cs,1,MPI_INT,MPI_SUM,*comm);
+
 	int n_pts = coord.size() / 3;
-	std::vector<double> val(n_pts*data_dof);
+	int n_pts_global = total_cs / 3;
+
+	std::vector<double> val(n_pts_global*data_dof);
+	std::vector<double> global_coord(total_cs);
+
+	std::vector<int> cs_scan(size);
+	std::vector<int> cs_all(size);
+
+	MPI_Allgather(&cs,1,MPI_INT,&cs_all[0],1,MPI_INT,*comm);
+
+	cs_scan[0] = cs_all[0];
+	double sum = 0;
+	double temp = 0;
+	for(int i=0;i<size;i++){ // exclusive scan
+			temp = cs_scan[i];
+			cs_scan[i] = sum;
+			sum += temp;
+	}
+
+	MPI_Allgatherv(&coord[0],cs,MPI_DOUBLE,&global_coord[0],&cs_all[0],&cs_scan[0],MPI_DOUBLE,*comm);
 
 	FMMNode_t* r_node=static_cast<FMMNode_t*>(this->RootNode());
 	double *v = val.data();
 
 	#pragma omp parallel for
-	for(int i=0;i<n_pts;i++){
+	for(int i=0;i<n_pts_global;i++){
 		std::vector<double> x;
 		std::vector<double> y;
 		std::vector<double> z;
-		x.push_back(coord[i*dim + 0]);
-		y.push_back(coord[i*dim + 1]);
-		z.push_back(coord[i*dim + 2]);
-		r_node->ReadVal(x,y,z, &v[i*data_dof], true);
+		x.push_back(global_coord[i*dim + 0]);
+		y.push_back(global_coord[i*dim + 1]);
+		z.push_back(global_coord[i*dim + 2]);
+		r_node->ReadVal(x,y,z, &v[i*data_dof], false);
 		//std::cout << v[i*data_dof] << std::endl;
 
 		x.clear();
@@ -773,8 +838,12 @@ std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
 		z.clear();
 	}
 
-	//std::cout << "readvals end" << std::endl;
-	return val;
+	std::vector<double> global_val(n_pts_global*data_dof);
+	MPI_Allreduce(&val[0], &global_val[0], n_pts_global*data_dof, MPI_DOUBLE, MPI_SUM, *comm);
+
+	std::vector<double> local_vals(global_val.begin() + cs_scan[rank]/3*data_dof, global_val.begin() + cs_scan[rank]/3*data_dof + n_pts*data_dof );
+
+	return local_vals;
 
 }
 
@@ -787,7 +856,7 @@ void InvMedTree<FMM_Mat_t>::SetSrcValues(const std::vector<double> coords, const
 
 	std::vector<MPI_Node_t*> nlist=tree->GetNodeList();
 	std::vector<MPI_Node_t*> src_nodes;
-	std::cout << "n_list size" << nlist.size() << std::endl;
+	//std::cout << "n_list size" << nlist.size() << std::endl;
 	//std::vector<pvfmm::MortonId> mins=pt_tree->GetMins();
 	//	for(int i=0;i<mins.size();i++){
 	//		std::cout << mins[i] << std::endl;
@@ -1000,6 +1069,7 @@ double InvMedTree<FMM_Mat_t>::Norm2(){
 
   MPI_Reduce(&l2_loc, &l2_glb, 1, MPI_DOUBLE, MPI_SUM, 0, *c1);
   return sqrt(l2_glb);
+	MPI_Bcast(&l2_glb, 1, MPI_DOUBLE, 0, *c1);
 
 }
 
@@ -1031,6 +1101,10 @@ std::vector<double> InvMedTree<FMM_Mat_t>::Integrate(){
 	double temp_real = 0;
 	double temp_im = 0;
 
+	double glb_real = 0;
+	double glb_im = 0;
+
+
 	#pragma omp parallel for reduction(+:temp_real) reduction(+:temp_im)
 	for(size_t tid=0;tid<omp_p;tid++){
 		size_t i_start=(nlist1.size()* tid   )/omp_p;
@@ -1059,8 +1133,12 @@ std::vector<double> InvMedTree<FMM_Mat_t>::Integrate(){
 		temp_real = temp_real/n_nodes3;
 		temp_im = temp_im/n_nodes3;
 	}
+  MPI_Reduce(&temp_real, &glb_real, 1, MPI_DOUBLE, MPI_SUM, 0, *comm);
+  MPI_Reduce(&temp_im, &glb_im, 1, MPI_DOUBLE, MPI_SUM, 0, *comm);
+	MPI_Bcast(&glb_real, 1, MPI_INT, 0, *comm);
+	MPI_Bcast(&glb_im, 1, MPI_INT, 0, *comm);
 
-	std::vector<double> out = {temp_real, temp_im};
+	std::vector<double> out = {glb_real, glb_im};
 	return out;
 }
 

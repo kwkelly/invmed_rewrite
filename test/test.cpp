@@ -42,9 +42,20 @@ int mult_op_sym_test(MPI_Comm &comm);
 int mgs_test(MPI_Comm &comm);
 int compress_incident_test(MPI_Comm &comm);
 
+
 // -------------------------------------------------------------------
 // Definitions
 // -------------------------------------------------------------------
+int test_less(const double &expected, const double &actual, const std::string &name, MPI_Comm &comm){
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+	if(rank == 0){
+		if(actual < expected) std::cout << "\033[2;32m" << name << " passed! \033[0m- relative error=" << actual  << " expected=" << expected << std::endl;
+		else std::cout << "\033[2;31m FAILURE! - " << name << " failed! \033[0m- relative error=" << actual << " expected=" << expected << std::endl;
+	}
+	return 0;
+}
+
 
 int norm_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -64,18 +75,10 @@ int norm_test(MPI_Comm &comm){
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
 	double n_cubes = (one->GetNGLNodes()).size();
 	double n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
-	double diff = fabs(norm - sqrt(n_cubes*n_nodes3));
-	std::cout << norm << std::endl;
-	std::cout <<  (one->GetNGLNodes()).size() << std::endl;
-	std::cout <<  (one->GetNGLNodes()).size() << std::endl;
+	double diff = fabs(norm - 1);
+	std::string name = __func__;
+	test_less(1e-6,diff,name,comm);
 
-
-	if(diff < 1e-10){
-		std::cout << "\033[2;32mNorm test passed! \033[0m- absolute error=" << diff  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Norm test failed! \033[0m- absolute norm=" << diff  << std::endl;
-	}
 	delete one;
 
 	return 0;
@@ -90,23 +93,22 @@ int multiply_test(MPI_Comm &comm){
 	gfun->bndry = bndry;
 	gfun->kernel = kernel;
 	gfun->fn = ctr_pt_sol_fn;
-	gfun->f_max = 1;
+	gfun->f_max = 1000;
 
 	InvMedTree<FMM_Mat_t> *gfunc = new InvMedTree<FMM_Mat_t>(comm);
 	gfunc->bndry = bndry;
 	gfunc->kernel = kernel;
 	gfunc->fn = ctr_pt_sol_conj_fn;
-	gfunc->f_max = 1;
+	gfunc->f_max = 1000;
 
 	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
 	sol->bndry = bndry;
 	sol->kernel = kernel;
 	sol->fn = ctr_pt_sol_conj_prod_fn;
-	sol->f_max = 1;
+	sol->f_max = 1000;
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
 
 	//multiply the two, then get their difference
 	gfun->Multiply(gfunc,1);
@@ -114,13 +116,8 @@ int multiply_test(MPI_Comm &comm){
 
 	double rel_norm = gfun->Norm2()/sol->Norm2();
 
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test passed! \033[0m- relative error=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete gfunc;
 	delete gfun;
@@ -167,13 +164,8 @@ int multiply_test2(MPI_Comm &comm){
 
 	double rel_norm = sc->Norm2()/sol->Norm2();
 
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test 2 passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 2 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete sc;
 	delete scc;
@@ -223,17 +215,13 @@ int multiply_test3(MPI_Comm &comm){
 
 	double rel_norm = p1->Norm2()/sol->Norm2();
 
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32mMultiply test 3 passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31mFAILURE! - Multiply test 3 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete p1;
 	delete p2;
 	delete sol;
+	delete one;
 
 	return 0;
 }
@@ -269,15 +257,10 @@ int conj_multiply_test(MPI_Comm &comm){
 	sc->ConjMultiply(sc2,1);
 	sc->Add(sol,-1);
 
-	double rel_norm = sc->Norm2();
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Conjugate multiply test passed! \033[0m - relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete sc;
 	delete sc2;
@@ -318,15 +301,10 @@ int conj_multiply_test2(MPI_Comm &comm){
 	sc->ConjMultiply(scc,1);
 	sc->Add(sol,-1);
 
-	double rel_norm = sc->Norm2();
+	double rel_norm = sc->Norm2()/sol->Norm2();
 
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Conjugate multiply test 2 passed! \033[0m - relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Conjugate multiply test 2 failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete sc;
 	delete scc;
@@ -368,13 +346,8 @@ int add_test(MPI_Comm &comm){
 
 	double rel_norm = sc->Norm2()/sol->Norm2();
 
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Addition test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Addition test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete sc;
 	delete scc;
@@ -412,14 +385,8 @@ int copy_test(MPI_Comm &comm){
 
 	double rel_norm = sc->Norm2()/sol->Norm2();
 
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Copy test passed!\033[0m - relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Copy test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete sc;
 	delete sc2;
@@ -428,10 +395,17 @@ int copy_test(MPI_Comm &comm){
 	return 0;
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "ptfmm_trg2tree_test"
 int ptfmm_trg2tree_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	int rank;
+	int size;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Comm_size(comm,&size);
 
 	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);
 	one->bndry = bndry;
@@ -449,45 +423,52 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
 	std::vector<double> src_coord;
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-	src_coord.push_back(0.5);
-
-	std::vector<double> src_vals = one->ReadVals(src_coord);
-	// test the values it reads.
-	int val_test = 0;
-	if(fabs(src_vals[0] - 1) > 1e-10 || fabs(src_vals[1] - 0) > 1e-10){
-		val_test = 1;
+	if(!rank){
+		src_coord.push_back(0.5);
+		src_coord.push_back(0.5);
+		src_coord.push_back(0.5);
 	}
 
+	std::vector<double> src_vals = one->ReadVals(src_coord);
+
 	// create the particle fmm tree we need
-	pvfmm::PtFMM_Tree* pt_tree = one->CreatePtFMMTree(src_coord, src_vals, kernel);
+
+	std::vector<double> trg_coord = one->ChebPoints();
+
+	// Now we can create the new octree
+	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_vals, trg_coord, comm );
+	// Load matrices.
+	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	matrices->Initialize(mult_order, comm, kernel);
+
+	// FMM Setup
+	pt_tree->SetupFMM(matrices);
+
+
+	//pvfmm::PtFMM_Tree* pt_tree = one->CreatePtFMMTree(src_coord, src_vals, kernel);
 	std::vector<double> trg_value;
-	pvfmm::PtFMM_Evaluate(pt_tree, trg_value);
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord.size()/3);
 
 	// Insert the values back in
 	one->Trg2Tree(trg_value);
 	one->Add(sol,-1);
+	one->Write2File("../results/difff",0);
 
-	double rel_norm = one->Norm2();
+	double rel_norm = one->Norm2()/sol->Norm2();
 
-
-	if(val_test){
-		std::cout << "\033[2;31mFAILURE! Wrong value extracted. \033[0m Got: " << src_vals[0] << ", " << src_vals[1] <<". Expected: 1, 0" << std::endl;
+	std::string name = __func__;
+	if(!rank){ // src_vals exists only on p1
+		test_less(1e-10,fabs(src_vals[0] - 1), name, comm);
+		test_less(1e-10,fabs(src_vals[1] - 0), name, comm);
+		test_less(1e-6,rel_norm,name,comm);
 	}
-
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m PtFMM/Trg2Tree test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - PtFMM/Trg2Tree test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-
 
 	delete one;
 	delete sol;
 	delete pt_tree;
+	delete matrices;
 
 	return 0;
 }
@@ -533,14 +514,10 @@ int int_test(MPI_Comm &comm){
 	test_fn->Write2File("results/should_be_zero",0);
 	sol->Write2File("results/sol",0);
 
-	double rel_norm = test_fn->Norm2();
+	double rel_norm = test_fn->Norm2()/sol->Norm2();
 
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Integration test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete test_fn;
 	delete sol;
@@ -569,18 +546,58 @@ int int_test2(MPI_Comm &comm){
 	//double on = one->Norm2();
 	std::vector<double> integral = one->Integrate();
 
-	if(abs(integral[0] - 1 < 1e-5) and abs(integral[1] < 1e-5)){
-		std::cout << "\033[2;32m Integration test passed! \033[0m-  integra=" << integral[0] << " " << integral[1]   << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- integra=" << integral[0] << " " << integral[1]  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,fabs(integral[0]-1),name,comm);
+	test_less(1e-6,fabs(integral[1]),name,comm);
 
 	delete one;
 
 	return 0;
 }
 
+int tree_vec_test(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	InvMedTree<FMM_Mat_t> *poly = new InvMedTree<FMM_Mat_t>(comm);
+	poly->bndry = bndry;
+	poly->kernel = kernel;
+	poly->fn = poly_fn;
+	poly->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	int m = temp->m;
+	int M = temp->M;
+	int n = temp->n;
+	int N = temp->N;
+	Vec temp_vec;
+ VecCreateMPI(comm,n,PETSC_DETERMINE,&temp_vec);
+
+	tree2vec(poly,temp_vec);
+	vec2tree(temp_vec,temp);
+
+	temp->Add(poly,-1);
+	double rel_norm = temp->Norm2()/poly->Norm2();
+
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
+
+	delete poly;
+	delete temp;
+	VecDestroy(&temp_vec);
+
+	return 0;
+}
 
 int int_test3(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -596,17 +613,13 @@ int int_test3(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
-
 	// check the solution...
 	//double on = one->Norm2();
 	std::vector<double> integral = prod->Integrate();
 
-	if(abs(integral[0] - .125 < 1e-5) and abs(integral[1] -.125 < 1e-5)){
-		std::cout << "\033[2;32m Integration test passed! \033[0m-  integra=" << integral[0] << " " << integral[1]   << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Integration test failed! \033[0m- integra=" << integral[0] << " " << integral[1]  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,fabs(integral[0]-.125),name,comm);
+	test_less(1e-6,fabs(integral[1]-.125),name,comm);
 
 	delete prod;
 
@@ -617,6 +630,10 @@ int mult_op_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	int rank;
+	int size;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Comm_size(comm,&size);
 
 	PetscInt ierr;
 
@@ -624,7 +641,7 @@ int mult_op_test(MPI_Comm &comm){
 	ctr_pt->bndry = bndry;
 	ctr_pt->kernel = kernel;
 	ctr_pt->fn = int_test_fn;
-	ctr_pt->f_max = 1;
+	ctr_pt->f_max = 1000;
 
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
 	temp->bndry = bndry;
@@ -642,7 +659,7 @@ int mult_op_test(MPI_Comm &comm){
 	sol->bndry = bndry;
 	sol->kernel = kernel;
 	sol->fn = ctr_pt_sol_neg_conj_fn;
-	sol->f_max = 1;
+	sol->f_max = 1000;
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
@@ -657,6 +674,7 @@ int mult_op_test(MPI_Comm &comm){
 	src_coord.push_back(0.5);
 	src_coord.push_back(0.5);
 	src_coord.push_back(0.5);
+
 	// set up the particle fmm tree
 	std::vector<double> src_vals = temp->ReadVals(src_coord); // these vals really don't matter. will be reset before use.
 	pvfmm::PtFMM_Tree* pt_tree = temp->CreatePtFMMTree(src_coord, src_vals, kernel_conj);
@@ -665,6 +683,8 @@ int mult_op_test(MPI_Comm &comm){
 	PetscInt M = phi_0->M;
 	PetscInt n = phi_0->n;
 	PetscInt N = phi_0->N;
+
+
 	Mat A;
 	InvMedData invmed_data;
 	invmed_data.temp = temp;
@@ -694,12 +714,8 @@ int mult_op_test(MPI_Comm &comm){
 
 	double rel_norm = ctr_pt->Norm2()/sol->Norm2();
 
-	if(rel_norm < 1e-10){
-		std::cout << "\033[2;32m Multiply operator test passed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
-	else{
-		std::cout << "\033[2;31m FAILURE! - Multiply operator test failed! \033[0m- relative norm=" << rel_norm  << std::endl;
-	}
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	MatDestroy(&A);
 
@@ -1509,7 +1525,7 @@ int randqr_test2(MPI_Comm &comm){
 	return 0;
 
 }
-
+/*
 
 int factorize_G_test(MPI_Comm &comm){
 
@@ -1612,29 +1628,27 @@ int factorize_G_test(MPI_Comm &comm){
 
 	// transform the left side of the equations
 	// we can just scatter the data now in U_hat
-	/*
-	std::vector<Vec> u_hat_vec;
-	for(int i=0;i<m1;i++){
-			Vec u_hat;
-			VecCreateMPI(comm,n,PETSC_DETERMINE,&u_hat);
-			u_hat_vec.push_back(u_hat);
-	}
-	ElMat2Vecs(u_hat_vec,U_hat);
+	//std::vector<Vec> u_hat_vec;
+	//for(int i=0;i<m1;i++){
+	//    Vec u_hat;
+	//    VecCreateMPI(comm,n,PETSC_DETERMINE,&u_hat);
+	//    u_hat_vec.push_back(u_hat);
+	//}
+	//ElMat2Vecs(u_hat_vec,U_hat);
 	
-	//ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
-	std::vector<Vec> phi_hat_vec;
-	for(int i=0;i<m1;i++){
-		vec2tree(u_hat_vec[i],temp);
-		vec2tree(u_hat_vec[i],t1);
-		scatter_born(t1,eta_k2,temp);
-		{
-			Vec phi_hat;
-			VecCreateMPI(comm,n,PETSC_DETERMINE,&phi_hat);
-			tree2vec(temp,phi_hat);
-			u_hat_vec.push_back(phi_hat);
-		}
-	}
-	*/
+	////ElMat2Vecs(ortho_vec,U_hat); //no longer orthogonal
+	//std::vector<Vec> phi_hat_vec;
+	//for(int i=0;i<m1;i++){
+	//  vec2tree(u_hat_vec[i],temp);
+	//  vec2tree(u_hat_vec[i],t1);
+	//  scatter_born(t1,eta_k2,temp);
+	//  {
+	//    Vec phi_hat;
+	//    VecCreateMPI(comm,n,PETSC_DETERMINE,&phi_hat);
+	//    tree2vec(temp,phi_hat);
+	//    u_hat_vec.push_back(phi_hat);
+	//  }
+	//}
 
 	PetscRandomDestroy(&r);
 	//for(int i=0;i<num_trees;i++){
@@ -1645,9 +1659,8 @@ int factorize_G_test(MPI_Comm &comm){
 	return 0;
 
 }
-
-
-int GfuncGtfunc_test(MPI_Comm &comm){
+*/
+/*
 
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -1907,7 +1920,8 @@ int GGt_test(MPI_Comm &comm){
 	return 0;
 
 }
-
+*/
+/*
 int UUt_test(MPI_Comm &comm){
 
 	// Set up some trees
@@ -2082,7 +2096,7 @@ int UUt_test(MPI_Comm &comm){
 	return 0;
 }
 
-
+*/
 
 #undef __FUNCT__
 #define __FUNCT__ "comp_inc_test"
@@ -2433,7 +2447,14 @@ int filter_test(MPI_Comm &comm){
 
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "el_test"
 int el_test(MPI_Comm &comm){
+
+	int size;
+	int rank;
+	MPI_Comm_size(comm,&size);
+	MPI_Comm_rank(comm,&rank);
 
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -2461,32 +2482,33 @@ int el_test(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
-	PetscInt m = temp->m;
-	PetscInt M = temp->M;
-	PetscInt n = temp->n;
-	PetscInt N = temp->N;
-	std::cout << M << std::endl;
 
-	El::Matrix<El::Complex<double>> A;
+
+	int M = temp->M;
+
+	El::Grid g(comm, size);
+
+	El::DistMatrix<El::Complex<double>> A(g);
 	El::Zeros(A,M/2,1); // dividing by data_dof
 
 	tree2elemental(temp,A);
+	//El::Display(A,"A");
 	elemental2tree(A,temp1);
 
 	temp->Write2File("../results/eltestA",0);
 	temp1->Write2File("../results/eltestB",0);
-	temp->Add(temp1,-1);
-	temp->Write2File("../results/eltestC",0);
+	temp1->Add(temp,-1);
+	temp1->Write2File("../results/eltestC",0);
 
+	double rel_norm  = temp1->Norm2()/temp->Norm2();
 
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
 
 	delete temp;
 	return 0;
 
 }
-
-
-
 
 int UfuncUtfunc_test(MPI_Comm &comm){
 
@@ -2605,405 +2627,6 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 
 }
 
-
-
-
-
-
-
-
-
-
-
-int faims(MPI_Comm &comm){
-	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel;
-	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
-	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	//PetscErrorCode ierr;
-
-	int data_dof = 2;
-
-	//PetscRandom r;
-	//PetscRandomCreate(comm,&r);
-	//PetscRandomSetSeed(r,time(NULL));
-	//PetscRandomSetType(r,PETSCRAND48);
-
-	//////////////////////////////////////////////////////////////
-	// Set up the source and detector locations
-	//////////////////////////////////////////////////////////////
-
-	int create_number = 8;
-	pt_src_locs = equiplane(create_number,0,0.1);
-	//pt_src_locs = {.5,.5,.5};
-	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
-	int N_s = pt_src_locs.size()/3;
-
-	std::vector<double> d_locs = equiplane(create_number,0,0.9);
-	std::cout << "Number gnereated=" << d_locs.size() << std::endl;
-	int N_d = d_locs.size()/3;
-
-	{
-		coeffs.clear();
-		for(int i=0;i<N_s*data_dof;i++){
-			coeffs.push_back((i%2 == 0) ? 1 : 0 ); // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
-		}
-	}
-
-	//////////////////////////////////////////////////////////////
-	// Set up FMM stuff
-	//////////////////////////////////////////////////////////////
-
-	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
-	temp->bndry = bndry;
-	temp->kernel = kernel;
-	temp->fn = phi_0_fn;
-	temp->f_max = 4;
-
-
-	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
-	temp_c->bndry = bndry;
-	temp_c->kernel = kernel_conj;
-	temp_c->fn = zero_fn;
-	temp_c->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
-	mask->bndry = bndry;
-	mask->kernel = kernel;
-	mask->fn = mask_fn;
-	mask->f_max = 1;
-
-	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);
-	eta->bndry = bndry;
-	eta->kernel = kernel;
-	eta->fn = eta_fn;
-	eta->f_max = .01;
-
-	// initialize the trees
-	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
-	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-	temp->SetupFMM(fmm_mat);
-
-	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
-	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
-	temp_c->SetupFMM(fmm_mat_c);
-
-	std::vector<double> ds = temp_c->ReadVals(d_locs);
-	pvfmm::PtFMM_Tree* Gt_tree = temp_c->CreatePtFMMTree(d_locs, ds, kernel_conj);
-
-	// Tree sizes
-	int m = temp->m;
-	int M = temp->M;
-	int n = temp->n;
-	int N = temp->N;
-	int N_disc = N/2;
-
-	G_data g_data;
-	g_data.temp = temp;
-	g_data.mask= mask;
-	g_data.src_coord = d_locs;
-	g_data.pt_tree = Gt_tree;
-
-	int R_d = N_d/4;
-	eta->Write2File("../results/eta",0);
-
-	/////////////////////////////////////////////////////////////////
-	// Eta to Elemental Vec
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Perturbation to Elemental Vector" << std::endl;
-	El::Matrix<El::Complex<double>> EtaVec;
-	El::Zeros(EtaVec,N_disc,1);
-	tree2elemental(eta,EtaVec);
-
-	/////////////////////////////////////////////////////////////////
-	// Randomize the Incident Field
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Incident Field Randomization" << std::endl;
-	El::Matrix<double> rand_coeffs;
-	El::Gaussian(rand_coeffs, N_s*data_dof, 1);
-	coeffs.assign(rand_coeffs.Buffer(),rand_coeffs.Buffer()+N_s*data_dof);
-
-	std::cout << "Printing Random Incident Field Coefficients" << std::endl;
-	for(int i=0;i<coeffs.size();i++){
-		std::cout << coeffs[i] << std::endl;
-	}
-	std::cout << "Done" << std::endl;
-
-	InvMedTree<FMM_Mat_t>* rand_inc = new InvMedTree<FMM_Mat_t>(comm);
-	rand_inc->bndry = bndry;
-	rand_inc->kernel = kernel;
-	rand_inc->fn = phi_0_fn;
-	rand_inc->f_max = 4;
-	rand_inc->CreateTree(false);
-
-	// Need to mask it to remove the singularities
-	rand_inc->Multiply(mask,1);
-
-	// convert the tree into a vector. This vector represents the function
-	// that we passed into the tree constructor (which contains the current 
-	// random coefficients).
-	El::Matrix<El::Complex<double>> U_rand;
-	El::Zeros(U_rand,N_disc,1);
-	tree2elemental(rand_inc,U_rand);
-	// and normalize it
-	El::Scale(El::TwoNorm(U_rand),U_rand);
-	elemental2tree(U_rand,temp);
-	temp->Write2File("../results/U_rand",0);
-
-	/////////////////////////////////////////////////////////////////
-	// Compute the scattered field
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Scattered Field Computation" << std::endl;
-
-	El::Matrix<El::Complex<double>> Phi;
-	El::Zeros(Phi,N_d,1);
-	elemental2tree(U_rand,temp);
-	temp->Multiply(mask,1);
-	temp->Multiply(eta,1);
-	temp->ClearFMMData();
-	temp->RunFMM();
-	temp->Copy_FMMOutput();
-	temp->Write2File("../results/scattered_field",0);
-	std::vector<double> detector_values = temp->ReadVals(d_locs);
-	vec2elemental(detector_values,Phi);
-
-	/////////////////////////////////////////////////////////////////
-	// Low rank factorization of G
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Low Rank Factorization of G" << std::endl;
-		
-	/*
-	 * First we need a random Gaussian vector
-	 */
-
-	El::Matrix<El::Complex<double>> RandomWeights;
-	El::Matrix<El::Complex<double>> Y; // the projection of omaga through G*
-	//El::Matrix<El::Complex<double>> Y_i;
-	El::Zeros(Y,N_disc,R_d);
-
-
-	for(int i=0;i<R_d;i++){
-		El::Gaussian(RandomWeights, N_d, 1);
-		El::Matrix<El::Complex<double>> Y_i = El::View(Y, 0, i, N_disc, 1);
-		Gt_func(RandomWeights,Y_i,g_data);
-		/*
-		detector_values.assign(RandomWeights.Buffer(),RandomWeights.Buffer()+N_d*data_dof);
-
-		Gt_tree->ClearFMMData();
-		std::vector<double> trg_value;
-		pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
-
-		// Insert the values back in
-		temp->Trg2Tree(trg_value);
-		temp->Multiply(mask,1);
-		tree2elemental(temp, Y_i);
-		*/
-	}
-	El::Matrix<El::Complex<double>> R; // the projection of omaga through G*
-	El::qr::Explicit(Y, R, El::QRCtrl<double>());
-
-
-	// Now Y is such that G* \approx YY*G*.Thus we can compute GY
-	// Compute it's SVD and then multiply by Q, thus giving the approx 
-	// SVD of G!!!
-	
-	El::Matrix<El::Complex<double>> GY;
-	El::Zeros(GY,N_d,R_d);
-	//El::Matrix<El::Complex<double>> GY_i;
-	for(int i=0;i<R_d;i++){
-		El::Matrix<El::Complex<double>> Y_i = El::View(Y, 0, i, N_disc, 1);
-		El::Matrix<El::Complex<double>> GY_i = El::View(GY, 0, i, N_d, 1);
-		G_func(Y_i,GY_i,g_data);
-		/*
-		elemental2tree(Y_i,temp);
-		temp->Multiply(mask,1);
-		temp->ClearFMMData();
-		temp->RunFMM();
-		temp->Copy_FMMOutput();
-		detector_values = temp->ReadVals(d_locs); // this should be size 2*N_d, we must now convert to a complex Elemental mat
-
-
-		vec2elemental(detector_values,GY_i);
-		*/
-	}
-
-	El::Matrix<double> s;
-	El::Zeros(s,R_d,1);
-
-	El::Matrix<El::Complex<double>> V;
-	El::Zeros(V,R_d,R_d);
-
-	El::SVD(GY, s, V, El::SVDCtrl<double>());
-
-
-	std::vector<double> d(R_d);
-	d.assign(s.Buffer(),s.Buffer()+R_d);
-
-	El::Matrix<El::Complex<double>> Sigma;
-	El::Zeros(Sigma,R_d,R_d);
-	El::Diagonal(Sigma, d);
-
-	// G \approx GYY* = U\Sigma\V*Y*
-	// So We take V* and multiply by Y*
-	El::Matrix<El::Complex<double>> Vt_tilde;
-	El::Zeros(Vt_tilde,R_d,N_disc);
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-	std::cout << "alpha " << alpha << std::endl; 
-	std::cout << "beta " << beta<< std::endl; 
-
-	El::Gemm(El::ADJOINT,El::ADJOINT,alpha,V,Y,beta,Vt_tilde);
-
-	/////////////////////////////////////////////////////////////////
-	// Transform phi
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Transform the Scattered Field" << std::endl;
-
-
-	El::Matrix<El::Complex<double>> Phi_hat;
-	El::Zeros(Phi_hat,R_d,1);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,GY,Phi,beta,Phi_hat);
-
-
-	/////////////////////////////////////////////////////////////////
-	// Now we have Phi_hat = \Sigma Vt_tilde*(\eta.U_rand)
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Multiply matrix by the incident field" << std::endl;
-	
-	// U_rand is diagonal N_disc x N_disc. Instead of forming it,
-	// we can multiply each row of Vt_tilde pointwise by U_rand
-	El::Matrix<El::Complex<double>> Ut_rand;
-	El::Zeros(Ut_rand,1,N_disc);
-	El::Transpose(U_rand,Ut_rand);
-
-	El::Matrix<El::Complex<double>> Vt_tildeU;
-	El::Zeros(Vt_tildeU,R_d,N_disc);
-
-	for(int i=0;i<R_d;i++){
-		El::Matrix<El::Complex<double>> V_i = El::View(Vt_tilde, i, 0, 1, N_disc);
-		El::Matrix<El::Complex<double>> VU_i = El::View(Vt_tildeU, i, 0, 1, N_disc);
-		El::Hadamard(Ut_rand,V_i,VU_i);
-	}
-
-	//El::Display(Vt_tildeU,"Vt_tildeU");
-	std::cout << "Done w/ Vt_tildeU" << std::endl;
-
-	/////////////////////////////////////////////////////////////////
-	// Now we have Phi_hat = \Sigma Vt_tildeU_rand \eta
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Rest of the Multiplcations"<<  std::endl;
-
-	El::Matrix<El::Complex<double>> G_eps;
-	El::Zeros(G_eps,R_d,N_disc);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,Sigma,Vt_tildeU,beta,G_eps);
-
-	/////////////////////////////////////////////////////////////////
-	// Solve
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Solve"<<  std::endl;
-	El::Matrix<El::Complex<double>> Eta_recon;
-	El::Zeros(Eta_recon,N_disc,1);
-
-	//std::vector<double> gamma(N_disc);
-	//std::fill(gamma.begin(),gamma.end(),1.5);
-	//El::Matrix<El::Complex<double>> Gamma;
-	//El::Zeros(Gamma,N_disc,N_disc);
-	//El::Diagonal(Gamma,gamma);
-	
-	El::Complex<double> gamma;
-	El::SetRealPart(gamma, 1.5);
-	El::SetImagPart(gamma, 0.0);
-
-	//El::Tikhonov(G_eps, Phi_hat, Gamma, Eta_recon, El::TIKHONOV_CHOLESKY);
-	//El::Ridge(G_eps, Phi_hat, 1.5, Eta_recon);
-	
-	// Truncated SVD
-	int r = 0;
-	int k = R_d/2;
-	std::cout << "k: " << k << std::endl;
-	El::Matrix<double> s_sol;
-	El::Matrix<El::Complex<double>> V_sol;
-	El::SVD(G_eps, s_sol, V_sol, El::SVDCtrl<double>());
-
-	std::cout << "G H " << G_eps.Height() << std::endl;
-	std::cout << "G W " << G_eps.Width() << std::endl;
-	std::cout << "s H " << s_sol.Height() << std::endl;
-	std::cout << "s W " << s_sol.Width() << std::endl;
-	std::cout << "V H " << V_sol.Height() << std::endl;
-	std::cout << "V W " << V_sol.Width() << std::endl;
-
-	// truncate
-	El::Matrix<double> s_sol_k = El::View(s_sol,0,0,k,1);
-	El::Matrix<El::Complex<double>> V_sol_k = El::View(V_sol,0,0,N_disc,k);
-	El::Matrix<El::Complex<double>> G_eps_k = El::View(G_eps,0,0,R_d,k);
-
-	El::Matrix<El::Complex<double>> C;
-	El::Zeros(C,k,1);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,G_eps_k,Phi_hat,beta,C);
-	std::cout << "dbg2" << std::endl;
-
-	std::vector<El::Complex<double>> s_sol_k_inv(k); // needs to be complex for Gemm
-	for(int i=0;i<k;i++){
-		El::Complex<double> v1;
-		double v = s_sol_k.Get(i,0);
-		v = 1.0/v;
-		El::SetRealPart(v1,v);
-		El::SetImagPart(v1,0.0);
-		s_sol_k_inv[i] = v1;
-	}
-	El::Matrix<El::Complex<double>> Sig_k;
-	El::Diagonal(Sig_k,s_sol_k_inv);
-
-	El::Matrix<El::Complex<double>> D;
-	El::Zeros(D,k,1);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,Sig_k,C,beta,D);
-
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,V_sol_k,D,beta,Eta_recon);
-	std::cout << "V H " << Eta_recon.Height() << std::endl;
-	std::cout << "V W " << Eta_recon.Width() << std::endl;
-
-	
-
-	/////////////////////////////////////////////////////////////////
-	// Test
-	/////////////////////////////////////////////////////////////////
-	std::cout << "Test!" << std::endl ;
-	elemental2tree(Eta_recon,temp);
-	temp->Write2File("../results/sol",0);
-	temp->Add(eta,-1);
-	std::cout << "Relative Error: " << temp->Norm2()/eta->Norm2() << std::endl;
-
-
-
-	return 0;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 int main(int argc, char* argv[]){
 	static char help[] = "\n\
 												-eta        <Real>   Inf norm of \\eta\n\
@@ -3080,7 +2703,7 @@ int main(int argc, char* argv[]){
 
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
-	std::cout << "MINDEPTH: " << MINDEPTH << std::endl;
+	//std::cout << "MINDEPTH: " << MINDEPTH << std::endl;
 
 	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
 	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
@@ -3097,20 +2720,21 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
-//	norm_test(comm);
-//	add_test(comm);
-//	multiply_test(comm);
-//	multiply_test2(comm);
-//	multiply_test3(comm);
+	//norm_test(comm);
+	//add_test(comm);
+	//multiply_test(comm);
+	//multiply_test2(comm);
+	//multiply_test3(comm);
 	//conj_multiply_test(comm);
 	//conj_multiply_test2(comm);
-//	copy_test(comm);
-//	int_test(comm);
-//	int_test2(comm);
+	//copy_test(comm);
+	//int_test(comm);
+	//int_test2(comm);
 	//int_test3(comm);
-//	ptfmm_trg2tree_test(comm);
-//	mult_op_test(comm);
-//	spectrum_test(comm);
+	//tree_vec_test(comm);
+	//ptfmm_trg2tree_test(comm);
+	//mult_op_test(comm);
+	//spectrum_test(comm);
 //	mgs_test(comm);
 //  compress_incident_test(comm);
 	//factorize_G_test(comm);
@@ -3120,9 +2744,8 @@ int main(int argc, char* argv[]){
 //	UUt_test(comm);
   //comp_inc_test(comm);
 	//filter_test(comm);
-	//el_test(comm);
-	//faims(comm);
-	UfuncUtfunc_test(comm);
+	el_test(comm);
+	//UfuncUtfunc_test(comm);
 	//GfuncGtfunc_test(comm);
 	El::Finalize();
 	PetscFinalize();

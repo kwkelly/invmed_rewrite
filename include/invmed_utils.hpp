@@ -25,6 +25,7 @@ struct G_data{
 	pvfmm::PtFMM_Tree* pt_tree;
 	std::vector<double> src_coord;
 	bool filter;
+	MPI_Comm comm;
 };
 
 struct U_data{
@@ -573,6 +574,9 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 #define __FUNCT__ "elemental2tree"
 template <class FMM_Mat_t, typename El_Complex_Mat_t>
 int elemental2tree(El_Complex_Mat_t &Y, InvMedTree<FMM_Mat_t> *tree){
+	
+	assert((Y.DistData().colDist == El::MC) && (Y.DistData().rowDist == El::MR));
+
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -730,6 +734,9 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 #define __FUNCT__ "tree2elemental"
 template <class FMM_Mat_t, typename El_Complex_Mat_t>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
+
+	assert((Y.DistData().colDist == El::MC) && (Y.DistData().rowDist == El::MR));
+
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
 	const MPI_Comm* comm=tree->Comm();
@@ -802,16 +809,58 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
 
 #undef __FUNCT__
 #define __FUNCT__ "vec2elemental"
-int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>> &Y){
+int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double> > &Y){
+
+	//assert((Y.DistData().colDist == El::STAR) && (Y.DistData().rowDist == El::STAR));
+	const El::Grid& g = Y.Grid();
+	El::mpi::Comm elcomm = g.Comm();
+	MPI_Comm comm = elcomm.comm;
+	int size, rank;
+	MPI_Comm_size(comm, &size);
+	MPI_Comm_rank(comm, &rank);
+
+	int data_dof = 2;
+
+	// get the input and output sizes for everyone
+	std::vector<int> input_sizes(size);
+	std::vector<int> output_sizes(size);
+	int m = (vec.size())/data_dof;
+	int el_l_sz = Y.LocalHeight();
+
+	MPI_Allgather(&m, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,comm);
+	MPI_Allgather(&el_l_sz, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,comm);
+
+	std::vector<int> sendcnts;
+	std::vector<int> sdispls;
+	std::vector<int> recvcnts;
+	std::vector<int> rdispls;
+
+	std::vector<El::Complex<double>> indata(input_sizes[rank]);
+	#pragma omp parallel for
+	for(int i=0;i<m;i++){
+		double real = vec[2*i+0];
+		double imag = vec[2*i+1];
+		El::Complex<double> val;
+		El::SetRealPart(val,real);
+		El::SetImagPart(val,imag);
+
+		indata[i] = val;
+	}
+	std::vector<El::Complex<double>> outdata(output_sizes[rank]);
+
+	comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, comm);
+
+		El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],comm);
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
-	int sz = vec.size();
+	int sz = outdata.size();
 	#pragma omp parallel for
-	for(int i=0;i<sz/2; i++){
-		double real = vec[2*i];
-		double imag = vec[2*i+1];
-		El::SetRealPart(Y_ptr[i],real);
-		El::SetImagPart(Y_ptr[i],imag);
+	for(int i=0;i<sz; i++){
+		//double real = outdata[2*i];
+		//double imag = outdata[2*i+1];
+		//El::SetRealPart(Y_ptr[i],real);
+		//El::SetImagPart(Y_ptr[i],imag);
+		Y_ptr[i] = outdata[i];
 	}
 
 	return 0;
@@ -819,14 +868,79 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 
 #undef __FUNCT__
 #define __FUNCT__ "elemental2vec"
-int elemental2vec(El::Matrix<El::Complex<double>> &Y, std::vector<double> &vec){
+int elemental2vec(El::DistMatrix<El::Complex<double>> &Y, std::vector<double> &vec){
+
+	//assert((Y.DistData().colDist == El::STAR) && (Y.DistData().rowDist == El::STAR));
+
+	const El::Grid& g = Y.Grid();
+	El::mpi::Comm elcomm = g.Comm();
+	MPI_Comm comm = elcomm.comm;
+	int size, rank;
+	MPI_Comm_size(comm, &size);
+	MPI_Comm_rank(comm, &rank);
+
+	int data_dof = 2;
+	// get the input and output sizes for everyone
+	std::vector<int> input_sizes(size);
+	std::vector<int> output_sizes(size);
+	int m = (vec.size())/data_dof;
+	int el_l_sz = Y.LocalHeight();
+
+	MPI_Allgather(&el_l_sz, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,comm);
+	MPI_Allgather(&m, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,comm);
+
+	std::vector<int> sendcnts;
+	std::vector<int> sdispls;
+	std::vector<int> recvcnts;
+	std::vector<int> rdispls;
+
+	std::vector<El::Complex<double>> indata(input_sizes[rank]);
+	indata.assign(Y.Buffer(),Y.Buffer()+indata.size());
+	std::vector<El::Complex<double>> outdata(output_sizes[rank]);
+
+	comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, comm);
+
+	El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],comm);
+
+
+	//El::Complex<double> *Y_ptr = Y.Buffer();
+	int sz = outdata.size();
+	#pragma omp parallel for
+	for(int i=0;i<sz; i++){
+		vec[2*i] = El::RealPart(outdata[i]);
+		vec[2*i+1] = El::ImagPart(outdata[i]);
+	}
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "elstar2vec"
+int elstar2vec(El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> &Y, std::vector<double> &vec){
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
-	int sz = vec.size();
+	int sz = vec.size()/2;
 	#pragma omp parallel for
-	for(int i=0;i<sz/2; i++){
+	for(int i=0;i<sz; i++){
 		vec[2*i] = El::RealPart(Y_ptr[i]);
 		vec[2*i+1] = El::ImagPart(Y_ptr[i]);
+	}
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "vec2elstar"
+int vec2elstar(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>,El::STAR,El::STAR > &Y){
+
+	El::Complex<double> *Y_ptr = Y.Buffer();
+	int sz = vec.size()/2;
+	#pragma omp parallel for
+	for(int i=0;i<sz; i++){
+		double real = vec[2*i];
+		double imag = vec[2*i+1];
+		El::SetRealPart(Y_ptr[i],real);
+		El::SetImagPart(Y_ptr[i],imag);
 	}
 
 	return 0;
@@ -1715,17 +1829,20 @@ PetscErrorCode LR_mult(Mat M, Vec U, Vec Y){
 	return ierr;
 }
 
-
 #undef __FUNCT__
 #define __FUNCT__ "G_func"
-int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, G_data &g_data){
+int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, G_data *g_data){
 
 	// This function simply computes the convolution of G with an input U
 	// and then gets only the output at the detector locations
-	InvMedTree<FMM_Mat_t>* temp = g_data.temp;
-	InvMedTree<FMM_Mat_t>* mask = g_data.mask;
-	std::vector<double> detector_coord = g_data.src_coord;
-	bool filter = g_data.filter;
+	InvMedTree<FMM_Mat_t>* temp = g_data->temp;
+	InvMedTree<FMM_Mat_t>* mask = g_data->mask;
+	std::vector<double> detector_coord = g_data->src_coord;
+	bool filter = g_data->filter;
+	MPI_Comm comm = g_data->comm;
+	int rank;
+	MPI_Comm_rank(comm,&rank);
+	if(!rank) std::cout << "ChebFMM " << std::endl; 
 
 	elemental2tree(x,temp);
 	temp->Multiply(mask,1);
@@ -1737,18 +1854,23 @@ int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<do
 	vec2elemental(detector_values,y);
 	return 0;
 }
-/*
+
 #undef __FUNCT__
 #define __FUNCT__ "Gt_func"
-int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> &x, G_data &g_data){
+int Gt_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, G_data *g_data){
 
-	std::vector<double> detector_coord = g_data.src_coord;
-	pvfmm::PtFMM_Tree* Gt_tree = g_data.pt_tree;
-	InvMedTree<FMM_Mat_t>* temp = g_data.temp;
-	InvMedTree<FMM_Mat_t>* mask = g_data.mask;
+	std::vector<double> detector_coord = g_data->src_coord;
+	pvfmm::PtFMM_Tree* Gt_tree = g_data->pt_tree;
+	InvMedTree<FMM_Mat_t>* temp = g_data->temp;
+	InvMedTree<FMM_Mat_t>* mask = g_data->mask;
+	MPI_Comm comm = g_data->comm;
+	int rank;
+	MPI_Comm_rank(comm,&rank);
+	if(!rank) std::cout << "PtFMM " << std::endl; 
 
-	int n = y.Height();
-	std::vector<double> detector_values(n*2);
+	//int n = y.Height();
+	int n = detector_coord.size()/3*2;
+	std::vector<double> detector_values(n);
 
 	elemental2vec(y,detector_values);
 	//El::Display(y,"y");
@@ -1759,7 +1881,7 @@ int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> 
 
 	Gt_tree->ClearFMMData();
 	std::vector<double> trg_value;
-	pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, 0, &detector_values);
+	pvfmm::PtFMM_Evaluate(Gt_tree, trg_value, n, &detector_values);
 
 	// Insert the values back in
 	temp->Trg2Tree(trg_value);
@@ -1771,11 +1893,13 @@ int Gt_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> 
 
 #undef __FUNCT__
 #define __FUNCT__ "Ut_func"
-int Ut_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> &x, U_data &u_data){
+int Ut_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, U_data *u_data){
 
-	InvMedTree<FMM_Mat_t>* temp_c = u_data.temp_c;
-	InvMedTree<FMM_Mat_t>* mask = u_data.mask;
-	std::vector<double> src_coord = u_data.src_coord;
+	InvMedTree<FMM_Mat_t>* temp_c = u_data->temp_c;
+	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
+	std::vector<double> src_coord = u_data->src_coord;
+	int rank;
+	MPI_Comm_rank(u_data->comm,&rank);
 
 	// get the input data
 	elemental2tree(y,temp_c);
@@ -1788,6 +1912,10 @@ int Ut_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> 
 
 	// read at srcs
 	std::vector<double> src_values = temp_c->ReadVals(src_coord);
+	//if(!rank){
+	//	std::cout << src_values[0] << std::endl;
+	//	std::cout << src_values[1] << std::endl;
+	//}
 
 	vec2elemental(src_values,x);	
 
@@ -1796,43 +1924,91 @@ int Ut_func(El::Matrix<El::Complex<double>> &y, El::Matrix<El::Complex<double>> 
 
 #undef __FUNCT__
 #define __FUNCT__ "U_func"
-int U_func(El::Matrix<El::Complex<double>> &x, El::Matrix<El::Complex<double>> &y, U_data &u_data){
+int U_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, U_data *u_data){
 	// u  is the vector containing the random coefficients for each of the point sources
 
-	InvMedTree<FMM_Mat_t>* mask = u_data.mask;
-	MPI_Comm comm = u_data.comm;
+	//El::Grid& g = x.Grid();
+	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> x_star = x;
+	
+	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
+	MPI_Comm comm = u_data->comm;
 
-	std::cout << "dbgu1" << std::endl;
-	elemental2vec(x,*(u_data.coeffs));
-	for(int i=0;i<2;i++){
-		std::cout << "coeffs: " << (*(u_data.coeffs))[i]  << std::endl;
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	elstar2vec(x_star,*(u_data->coeffs));
+	/*
+	MPI_Barrier(comm);
+	if(rank == 0){
+		std::cout << (*(u_data.coeffs))[0] << std::endl;
+		std::cout << (*(u_data.coeffs))[1] << std::endl;
 	}
-	std::cout << "dbgu2" << std::endl;
+	MPI_Barrier(comm);
+	if(rank == 1){
+		std::cout << (*(u_data.coeffs))[0] << std::endl;
+		std::cout << (*(u_data.coeffs))[1] << std::endl;
+	}
+	MPI_Barrier(comm);
+	*/
 
 	// create the tree with the current values of the random vector
 	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
-	std::cout << "dbgu2.0" << std::endl;
-	t->bndry = u_data.bndry;
-	std::cout << "dbgu2.1" << std::endl;
-	t->kernel = u_data.kernel;
-	std::cout << "dbgu2.2" << std::endl;
-	t->fn = u_data.fn;
-	std::cout << "dbgu2.3" << std::endl;
+	t->bndry = u_data->bndry;
+	t->kernel = u_data->kernel;
+	t->fn = u_data->fn;
 	t->f_max = 4;
-	std::cout << "dbgu2.4" << std::endl;
 	t->CreateTree(false);
-	std::cout << "dbgu3" << std::endl;
 
 	// convert the tree into a vector. This vector represents the function
 	// that we passed into the tree constructor (which contains the current 
 	// random coefficients).
 	t->Multiply(mask,1);
-	std::cout << "dbgu4" << std::endl;
+	t->Write2File("../results/ufunc",0);
 	tree2elemental(t,y);
-	std::cout << "dbgu5" << std::endl;
 
+	MPI_Barrier(comm);
 	delete t;
 
 	return 0;
 }
-*/
+
+#undef __FUNCT__
+#define __FUNCT__ "rsvd_test_func"
+int rsvd_test_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> *A){
+
+	El::Complex<double> alpha;
+	El::SetRealPart(alpha,1.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Complex<double> beta;
+	El::SetRealPart(beta,0.0);
+	El::SetImagPart(beta,0.0);
+	int N = A->Height();
+	El::Zeros(y,N,1);
+
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,*A,x,beta,y);
+
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "rsvd_test_t_func"
+int rsvd_test_t_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> *At){
+
+	
+	El::Complex<double> alpha;
+	El::SetRealPart(alpha,1.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Complex<double> beta;
+	El::SetRealPart(beta,0.0);
+	El::SetImagPart(beta,0.0);
+
+	int N = At->Height();
+	El::Zeros(y,N,1);
+
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,*At,x,beta,y);
+
+	return 0;
+}
+
+

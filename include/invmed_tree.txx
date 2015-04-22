@@ -533,7 +533,30 @@ void InvMedTree<FMM_Mat_t>::CreateTree(bool adap){
 				(*it)->L=glb_nodes*(*it)->kernel->ker_dim[0];
 			}
 		}
-
+	}
+	else{ // still need to get the sizes... could probably just steal from one of the other trees thoguh.
+		int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+		size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+		size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+		{ // Get local and global size
+			long long loc_size=0, glb_size=0;
+			long long loc_nodes=0, glb_nodes=0;
+			std::vector<FMMNode_t*> nlist=this->GetNodeList();
+			for(size_t i=0;i<nlist.size();i++){
+				if(nlist[i]->IsLeaf() && !nlist[i]->IsGhost()){
+					loc_size+=n_coeff3; //nlist[i]->ChebData().Dim();
+					loc_nodes+=n_nodes3;
+				}
+			}
+			MPI_Allreduce(&loc_size, &glb_size, 1, MPI_LONG_LONG , MPI_SUM, *((*it)->Comm()));
+			MPI_Allreduce(&loc_nodes, &glb_nodes, 1, MPI_LONG_LONG, MPI_SUM, *((*it)->Comm()));
+			this->n=loc_size*(*it)->kernel->ker_dim[0];
+			this->N=glb_size*(*it)->kernel->ker_dim[0];
+			this->m=loc_size*(*it)->kernel->ker_dim[1];
+			this->M=glb_size*(*it)->kernel->ker_dim[1];
+			this->l=loc_nodes*(*it)->kernel->ker_dim[0];
+			this->L=glb_nodes*(*it)->kernel->ker_dim[0];
+		}
 	}
 	// I guess check the size of this???
 	//std::cout << (this->GetNodeList()).size() << std::endl;

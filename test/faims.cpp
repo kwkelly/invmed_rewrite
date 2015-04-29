@@ -352,6 +352,10 @@ void svd_test(MPI_Comm &comm, int m, int n, int r){
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,B1,B2,beta,A);
 	El::Adjoint(A,At);
 
+	El::Helmholtz(A, m*n, alpha);
+	A.Resize(m,n);
+	El::Adjoint(A,At);
+
 	/////////////////////////////////////////////////////////////////
 	// Low rank factorization of A
 	/////////////////////////////////////////////////////////////////
@@ -548,67 +552,6 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	/////////////////////////////////////////////////////////////////
 	int R_s = 1;
 	if(!rank) std::cout << "Incident Field Randomization" << std::endl;
-	/*
-	El::DistMatrix<double,El::STAR,El::STAR> rand_coeffs;
-	El::Gaussian(rand_coeffs, N_s*data_dof, 1);
-	coeffs.assign(rand_coeffs.Buffer(),rand_coeffs.Buffer()+N_s*data_dof);
-
-	// Create random combination via direct evaluation
-	InvMedTree<FMM_Mat_t>* rand_inc = new InvMedTree<FMM_Mat_t>(comm);
-	rand_inc->bndry = bndry;
-	rand_inc->kernel = kernel;
-	rand_inc->fn = phi_0_fn;
-	rand_inc->f_max = 4;
-	rand_inc->CreateTree(false);
-
-	// Need to mask it to remove the singularities
-	rand_inc->Multiply(mask,1);
-
-	// convert the tree into a vector. This vector represents the function
-	// that we passed into the tree constructor (which contains the current 
-	// random coefficients).
-	El::DistMatrix<El::Complex<double>> U_rand(g);
-	El::Zeros(U_rand,N_disc,1);
-	tree2elemental(rand_inc,U_rand);
-
-	// and normalize it
-	El::Scale(El::TwoNorm(U_rand),U_rand);
-	El::DistMatrix<El::Complex<double>> U_rand_sc(g);
-	El::Zeros(U_rand_sc,N_s,1);
-	Ut_func(U_rand,U_rand_sc,u_data);
-
-	El::DistMatrix<El::Complex<double>> U_rand_sc_t(g);
-	El::Zeros(U_rand_sc_t,1,N_s);
-	El::Adjoint(U_rand_sc,U_rand_sc_t);
-
-	El::DistMatrix<double> s_u(g);
-	El::Zeros(s_u,1,1);
-
-	El::DistMatrix<El::Complex<double>> V_u(g);
-	El::Zeros(V_u,1,N_s);
-
-	El::SVD(U_rand_sc_t, s_u, V_u, El::SVDCtrl<double>());
-	//El::Display(U_rand_sc_t);
-	//El::Display(s_u);
-
-	std::vector<double> s_u_vec(R_s);
-	El::DistMatrix<double,El::STAR,El::STAR> s_u_star = s_u;
-	s_u_vec.assign(s_u_star.Buffer(),s_u_star.Buffer()+R_s);
-
-	El::DistMatrix<El::Complex<double>> Sigma_u(g);
-	El::Diagonal(Sigma_u, s_u_vec);
-
-	El::DistMatrix<El::Complex<double>> UrU(g);
-	El::Zeros(UrU,N_disc,R_s);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,U_rand,U_rand_sc_t,beta,UrU); // the SVD above transofrmed this U_rand_sc_t into U_u, the SVD factor
-
-	El::DistMatrix<El::Complex<double>> UrUS(g);
-	El::Zeros(UrUS,N_disc,R_s);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,UrU,Sigma_u,beta,UrUS); // the SVD above transofrmed this U_rand_sc_t into U_u, the SVD factor
-	El::Copy(UrUS,U_rand);
-
-	elemental2tree(U_rand,temp);
-	*/
 
 	using namespace std::placeholders;
 	auto U_sf  = std::bind(U_func,_1,_2,&u_data);
@@ -650,67 +593,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	// Low rank factorization of G
 	/////////////////////////////////////////////////////////////////
 	if(!rank) std::cout << "Low Rank Factorization of G" << std::endl;
-		
-	/*
-	 * First we need a random Gaussian vector
-	 */
 
-	/*
-	El::DistMatrix<El::Complex<double>> RandomWeights(g);
-	El::DistMatrix<El::Complex<double>> Y(g); // the projection of omaga through G*
-	//El::Matrix<El::Complex<double>> Y_i;
-	El::Zeros(Y,N_disc,R_d);
-
-
-	for(int i=0;i<R_d;i++){
-		if(!rank) std::cout << "Pt_FMM " << i << std::endl; 
-		El::Gaussian(RandomWeights, N_d, 1);
-		El::DistMatrix<El::Complex<double>> Y_i = El::View(Y, 0, i, N_disc, 1);
-		Gt_func(RandomWeights,Y_i,g_data);
-	}
-
-	El::DistMatrix<El::Complex<double>> R(g); // the projection of omaga through G*
-	El::qr::Explicit(Y, R, El::QRCtrl<double>());
-
-	// Now Y is such that G* \approx YY*G*.Thus we can compute GY
-	// Compute it's SVD and then multiply by Q, thus giving the approx 
-	// SVD of G!!!
-	
-	El::DistMatrix<El::Complex<double>> GY(g);
-	El::Zeros(GY,N_d,R_d);
-	//El::Matrix<El::Complex<double>> GY_i;
-	for(int i=0;i<R_d;i++){
-		if(!rank) std::cout << "ChebFMM " << i << std::endl; 
-		El::DistMatrix<El::Complex<double>> Y_i = El::View(Y, 0, i, N_disc, 1);
-		El::DistMatrix<El::Complex<double>> GY_i = El::View(GY, 0, i, N_d, 1);
-		G_func(Y_i,GY_i,g_data);
-	}
-
-	El::DistMatrix<double> s(g);
-	El::Zeros(s,R_d,1);
-
-	El::DistMatrix<El::Complex<double>> V(g);
-	El::Zeros(V,R_d,R_d);
-
-	El::SVD(GY, s, V, El::SVDCtrl<double>());
-
-
-	std::vector<double> d(R_d);
-	El::DistMatrix<double,El::STAR,El::STAR> s_star = s;
-	d.assign(s_star.Buffer(),s_star.Buffer()+R_d);
-
-	El::DistMatrix<El::Complex<double>> Sigma(g);
-	El::Zeros(Sigma,R_d,R_d);
-	El::Diagonal(Sigma, d);
-
-	// G \approx GYY* = U\Sigma\V*Y*
-	// So We take V* and multiply by Y*
-	El::DistMatrix<El::Complex<double>> Vt_tilde(g);
-	El::Zeros(Vt_tilde,R_d,N_disc);
-	El::Gemm(El::ADJOINT,El::ADJOINT,alpha,V,Y,beta,Vt_tilde);
-	*/
-
-	using namespace std::placeholders;
 	auto G_sf  = std::bind(G_func,_1,_2,&g_data);
 	auto Gt_sf = std::bind(Gt_func,_1,_2,&g_data);
 
@@ -740,7 +623,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
 		t->bndry = bndry;
 		t->kernel = kernel;
-		t->fn = prod_fn;
+		t->fn = cs_fn;
 		t->f_max = 1;
 		t->CreateTree(false);
 
@@ -789,14 +672,30 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	// Compute the SVD of S_G Vt_G DW
 	/////////////////////////////////////////////////////////////////
 	//
-	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&Vt_G,&W,temp,temp_c);
-	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&Vt_G,&W,temp,temp_c);
+	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp_c);
+	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp_c);
 
 	El::DistMatrix<El::Complex<double>> U_B(g);
 	El::DistMatrix<El::Complex<double>>	S_B(g);
 	El::DistMatrix<El::Complex<double>> Vt_B(g);
 
-	rsvd2(U_B,S_B,Vt_B,B_sf,Bt_sf,N_disc,R_s*R_d,1);
+	//rsvd2(U_B,S_B,Vt_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_s*R_d);
+
+	std::cout << "U B H: " << U_B.Height() << std::endl;
+	std::cout << "U B W: " << U_B.Width() << std::endl;
+	std::cout << "S B H: " << S_B.Height() << std::endl;
+	std::cout << "S B W: " << S_B.Width() << std::endl;
+	std::cout << "Vt B H: " << Vt_B.Height() << std::endl;
+	std::cout << "Vt B W: " << Vt_B.Width() << std::endl;
+
+
+	El::DistMatrix<El::Complex<double>> showme(g);
+	El::Zeros(showme,R_s*R_d,1);
+
+	B_sf(US_U,showme);
+
+	El::Display(showme,"Show me");
+
 	
 
 	/////////////////////////////////////////////////////////////////
@@ -813,22 +712,6 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	El::DistMatrix<El::Complex<double>> VtU(g);
 	El::Zeros(VtU,R_d,N_disc);
 
-	/*
-	for(int i=0;i<R_d;i++){ // Hadamard product
-		El::DistMatrix<El::Complex<double>> V_i = El::View(Vt_G, i, 0, 1, N_disc);
-		El::DistMatrix<El::Complex<double>> VU_i = El::View(VtU, i, 0, 1, N_disc);
-		El::DistMatrix<El::Complex<double>> Vt_i(g);
-		El::DistMatrix<El::Complex<double>> VUt_i(g);
-		El::Transpose(V_i,Vt_i);
-		El::Transpose(VU_i,VUt_i);
-		elemental2tree(Vt_i,temp);
-		elemental2tree(US_U,temp_c);
-		temp->Multiply(temp_c,1);
-		tree2elemental(temp,VUt_i);
-		El::Transpose(VUt_i,VU_i);
-
-	}
-	*/
 	MDM(Vt_G,US_U,temp,temp_c);
 
 	/////////////////////////////////////////////////////////////////
@@ -837,20 +720,27 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	if(!rank) std::cout << "Rest of the Multiplcations"<<  std::endl;
 
 	El::DistMatrix<El::Complex<double>> G_eps(g);
-	El::Zeros(G_eps,R_d,N_disc);
+	El::Zeros(G_eps,R_d*R_s,N_disc);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,S_G,Vt_G,beta,G_eps);
+	//El::DistMatrix<El::Complex<double>> G_eps_part(g);
+	//El::Zeros(G_eps_part,R_d*R_s,R_d*R_s);
+	//El::Gemm(El::NORMAL,El::NORMAL,alpha,U_B,S_B,beta,G_eps_part);
+	//El::Gemm(El::NORMAL,El::NORMAL,alpha,G_eps_part,Vt_B,beta,G_eps);
 
 	{// test if G_eps is ok
 		El::DistMatrix<El::Complex<double>> r(g);
-		El::Zeros(r,N_disc,1);
+		El::Gaussian(r,N_disc,1);
 
 		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
 		t->bndry = bndry;
 		t->kernel = kernel;
-		t->fn = prod_fn;
+		t->fn = cs_fn;
 		t->f_max = 1;
 		t->CreateTree(false);
 
+		//elemental2tree(r,t);
+		//std::vector<double> filt = {1};
+		//t->FilterChebTree(filt);
 		tree2elemental(t,r);
 
 		El::DistMatrix<El::Complex<double>> a(g);
@@ -871,8 +761,8 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 		El::DistMatrix<El::Complex<double>> c(g);
 		El::Zeros(c,N_d,1);
 		G_func(r,c,&g_data);
-		//El::Display(c,"c");
-		//El::Display(b,"b");
+		El::Display(c,"c");
+		El::Display(b,"b");
 
 
 		El::Axpy(-1.0,c,b);
@@ -915,7 +805,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
 		t->bndry = bndry;
 		t->kernel = kernel;
-		t->fn = prod_fn;
+		t->fn = cs_fn;
 		t->f_max = 1;
 		t->CreateTree(false);
 
@@ -1115,8 +1005,8 @@ int main(int argc, char* argv[]){
 		std::cout << "k: " << k << std::endl;
 	}
 
-	faims(comm, R_d, k, N_pts);
-	//svd_test(comm,10,20,5);
+	//faims(comm, R_d, k, N_pts);
+	svd_test(comm,10,20,9);
 	El::Finalize();
 	PetscFinalize();
 

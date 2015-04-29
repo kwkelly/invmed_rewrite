@@ -2011,4 +2011,133 @@ int rsvd_test_t_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::
 	return 0;
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "B_func"
+int B_func(
+		El::DistMatrix<El::Complex<double>> &x,
+		El::DistMatrix<El::Complex<double>> &y,
+		El::DistMatrix<El::Complex<double>> *S_G,
+		El::DistMatrix<El::Complex<double>> *Vt_G,
+		El::DistMatrix<El::Complex<double>> *W,
+		InvMedTree<FMM_Mat_t>* temp,
+		InvMedTree<FMM_Mat_t>* temp_c
+		)
+{
+	int R_s = W->Width();
+	int R_d = Vt_G->Height();
+	int N_disc = W->Height();
 
+	std::cout << "R_s: " << R_s << std::endl;
+	std::cout << "R_d: " << R_d << std::endl;
+	std::cout << "N_disc: " << N_disc << std::endl;
+
+	const El::Grid& g = x.Grid();
+
+	elemental2tree(x,temp_c);
+
+	El::DistMatrix<El::Complex<double>> Wx(g);
+	El::Zeros(Wx,N_disc,R_s);
+
+	for(int i=0;i<R_s;i++){
+		El::DistMatrix<El::Complex<double>> W_i = El::View(*W, i, 0, N_disc, 1);
+		El::DistMatrix<El::Complex<double>> Wx_i = El::View(Wx, i, 0, N_disc, 1);
+		elemental2tree(W_i,temp);
+		temp->Multiply(temp_c,1);
+		tree2elemental(temp,Wx_i);
+	}
+
+	std::cout << Wx.Width() << std::endl;
+	std::cout << Wx.Height() << std::endl;
+	std::cout << Vt_G->Width() << std::endl;
+	std::cout << Vt_G->Height() << std::endl;
+
+	El::Complex<double> alpha;
+	El::SetRealPart(alpha,1.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Complex<double> beta;
+	El::SetRealPart(beta,0.0);
+	El::SetImagPart(beta,0.0);
+
+
+	El::DistMatrix<El::Complex<double>> VtWx(g);
+	El::Zeros(VtWx,R_d,R_s);
+	//MDM(Vt_G,Wx,temp,temp_c);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,*Vt_G,Wx,beta,VtWx);
+	//El::Copy(Vt_G,
+
+	El::Display(VtWx,"VtWx");
+
+	El::DistMatrix<El::Complex<double>> SVtWx(g);
+	El::Zeros(SVtWx,R_d,R_s);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,*S_G,VtWx,beta,SVtWx);
+
+	SVtWx.Resize(R_s*R_d,1);
+	y = SVtWx;
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "Bt_func"
+int Bt_func(
+		El::DistMatrix<El::Complex<double>> &x,
+		El::DistMatrix<El::Complex<double>> &y,
+		El::DistMatrix<El::Complex<double>> *S_G,
+		El::DistMatrix<El::Complex<double>> *Vt_G,
+		El::DistMatrix<El::Complex<double>> *W,
+		InvMedTree<FMM_Mat_t>* temp,
+		InvMedTree<FMM_Mat_t>* temp_c
+		)
+{
+
+	const El::Grid& g = x.Grid();
+	El::mpi::Comm elcomm = g.Comm();
+	MPI_Comm comm = elcomm.comm;
+	El::Complex<double> alpha;
+	El::SetRealPart(alpha,1.0);
+	El::SetImagPart(alpha,0.0);
+
+	El::Complex<double> beta;
+	El::SetRealPart(beta,0.0);
+	El::SetImagPart(beta,0.0);
+
+	int R_s = W->Width();
+	int R_d = Vt_G->Height();
+	int N_disc = W->Height();
+
+	x.Resize(R_d,R_s);
+
+	El::Display(x,"x");
+
+	El::DistMatrix<El::Complex<double>> Sx(g);
+	El::Zeros(Sx,R_d,R_s);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x,beta,Sx);
+
+	El::DistMatrix<El::Complex<double>> VSx(g);
+	El::Zeros(VSx,N_disc,R_s);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*Vt_G,Sx,beta,VSx);
+
+
+	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
+	t->bndry = temp->bndry;
+	t->kernel = temp->kernel;
+	t->fn = zero_fn;
+	t->f_max = 4;
+	t->CreateTree(false);
+
+
+	for(int i=0;i<R_s;i++){
+		El::DistMatrix<El::Complex<double>> VSx_i = El::View(VSx, i, 0, N_disc, 1);
+		El::DistMatrix<El::Complex<double>> W_i = El::View(*W, i, 0, N_disc, 1);
+		elemental2tree(W_i,temp);
+		elemental2tree(VSx_i,temp_c);
+		temp->ConjMultiply(temp_c,1);
+		t->Add(temp,1);
+	}
+	tree2elemental(t,y);
+
+	delete t;
+
+	return 0;
+}

@@ -1660,7 +1660,11 @@ int factorize_G_test(MPI_Comm &comm){
 
 }
 */
-/*
+int GfuncGtfunc_test(MPI_Comm &comm){
+
+	int rank, size;
+	MPI_Comm_size(comm,&size);
+	MPI_Comm_rank(comm,&rank);
 
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -1668,7 +1672,13 @@ int factorize_G_test(MPI_Comm &comm){
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 	PetscErrorCode ierr;
 
-	std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
+	//std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
+	std::vector<double> detector_coord;
+	if(!rank){
+		detector_coord.push_back(.5);
+		detector_coord.push_back(.5);
+		detector_coord.push_back(.5);
+	}
 	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
 
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
@@ -1703,7 +1713,8 @@ int factorize_G_test(MPI_Comm &comm){
 	int M = temp->M;
 	int n = temp->n;
 	int N = temp->N;
-	int n_detectors = detector_coord.size()/3;
+	//int n_detectors = detector_coord.size()/3;
+	int n_detectors = 1; // sum of number of detector_coord on each proc
 
 	std::vector<double> detector_samples = temp->ReadVals(detector_coord); //Not sure exactly what this will do...
 	pvfmm::PtFMM_Tree* Gt_tree = temp->CreatePtFMMTree(detector_coord, detector_samples, kernel_conj);
@@ -1714,30 +1725,32 @@ int factorize_G_test(MPI_Comm &comm){
 	g_data.src_coord = detector_coord;
 	g_data.pt_tree = Gt_tree;
 
-	El::Matrix<El::Complex<double>> x;
+	El::Grid g(comm,size);
+
+	El::DistMatrix<El::Complex<double>> x(g);
 	El::Gaussian(x,M/2,1);
 	elemental2tree(x,temp);
 	std::vector<double> fvec = {1};
 	temp->FilterChebTree(fvec);
 	tree2elemental(temp,x);
 
-	El::Matrix<El::Complex<double>> y;
+	El::DistMatrix<El::Complex<double>> y(g);
 	El::Gaussian(y,n_detectors,1);
 
-	El::Matrix<El::Complex<double>> Gx;
+	El::DistMatrix<El::Complex<double>> Gx(g);
 	El::Zeros(Gx,n_detectors,1);
-	G_func(x,Gx,g_data);
+	G_func(x,Gx,&g_data);
 	//El::Display(Gx,"Gx");
 	//El::Display(y,"y");
 
 	std::cout << El::Dot(y,Gx) << std::endl;
 
 	// Now do it the other way
-	El::Matrix<El::Complex<double>> Gty;
+	El::DistMatrix<El::Complex<double>> Gty(g);
 	El::Zeros(Gty,M/2,1);
 
 	//El::Display(x,"x");
-	Gt_func(y,Gty,g_data);
+	Gt_func(y,Gty,&g_data);
 
 	//El::Display(Gty,"Gty");
 	elemental2tree(x,temp);
@@ -1746,14 +1759,26 @@ int factorize_G_test(MPI_Comm &comm){
 
 	std::vector<double> xGty = temp->Integrate();
 
-	std::cout << "=================================" << std::endl;
-	std::cout << xGty[0] << std::endl;
-	std::cout << xGty[1] << std::endl;
+	//El::Complex<double> Gxy = El::Dot(x,Gty);
+	El::Complex<double> Gxy = El::Dot(y,Gx);
+
+	double d1 = std::min(fabs(xGty[0]),fabs(El::RealPart(Gxy)));
+	double d2 = std::min(fabs(xGty[1]),fabs(El::ImagPart(Gxy)));
+
+
+	//std::cout << 	xGty[0] << std::endl;
+	//std::cout << 	El::RealPart(Gxy) << std::endl;
+	//std::cout << 	xGty[1] << std::endl;
+	//std::cout << 	El::ImagPart(Gxy) << std::endl;
+
+	std::string name = __func__;
+	test_less(1e-6,(fabs(xGty[0] - El::RealPart(Gxy)))/d1,name,comm);
+	test_less(1e-6,(fabs(xGty[1] - El::ImagPart(Gxy)))/d2,name,comm);
 
 	return 0;
 
 }
-
+/*
 int GGt_test(MPI_Comm &comm){
 
 	// Set up some trees
@@ -2510,7 +2535,70 @@ int el_test(MPI_Comm &comm){
 
 }
 
+#undef __FUNCT__
+#define __FUNCT__ "el_test2"
+int el_test2(MPI_Comm &comm){
+
+	int size;
+	int rank;
+	MPI_Comm_size(comm,&size);
+	MPI_Comm_rank(comm,&rank);
+	int gl_fact = size*(size+1)/2;
+
+	int M = 24*gl_fact;
+	int m = 24*(rank+1);
+
+	El::Grid g(comm, size);
+
+	El::DistMatrix<El::Complex<double>> A(g);
+	El::Gaussian(A,M/2,1); // dividing by data_dof
+
+	El::DistMatrix<El::Complex<double>> A2(g);
+	El::Zeros(A2,M/2,1); // dividing by data_dof
+
+	std::vector<double> vec(m);
+
+	elemental2vec(A,vec);
+
+	//El::Display(A,"A");
+	vec2elemental(vec,A2);
+	El::Axpy(-1.0,A,A2);
+
+	double rel_norm  = El::TwoNorm(A2)/El::TwoNorm(A);
+
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
+
+	/// Now for the Star Star distributed vectors
+
+	int N = 50;
+	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> B(g);
+	El::Gaussian(B,N/2,1); // dividing by data_dof
+
+	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> B2(g);
+	El::Zeros(B2,N/2,1); // dividing by data_dof
+
+	std::vector<double> vec2(N);
+	elstar2vec(B,vec2);
+	vec2elstar(vec2,B2);
+
+	El::Axpy(-1.0,B,B2);
+
+	rel_norm  = El::TwoNorm(B2)/El::TwoNorm(B);
+
+	test_less(1e-6,rel_norm,name,comm);
+
+
+	return 0;
+
+}
+/*
+*/
 int UfuncUtfunc_test(MPI_Comm &comm){
+
+	int rank, size;
+	MPI_Comm_size(comm, &size);
+	MPI_Comm_rank(comm, &rank);
 
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -2520,10 +2608,16 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 
 	int data_dof = 2;
 
-	std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
+	std::vector<double> detector_coord;
+	if(!rank){
+		detector_coord.push_back(.5);
+		detector_coord.push_back(.5);
+		detector_coord.push_back(.5);
+	}
+	//std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
 	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
 	
-	pt_src_locs = {.5,.5,.5};
+	pt_src_locs = {.5,.5,.5}; //think this needs to be global
 	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
 	int n_pt_srcs = pt_src_locs.size()/3;
 
@@ -2556,9 +2650,9 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 
 	mask->Write2File("../results/mask",0);
 
-	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-	temp->SetupFMM(fmm_mat);
+	//FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	//fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	//temp->SetupFMM(fmm_mat);
 
 	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
 	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
@@ -2568,7 +2662,8 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	int M = temp->M;
 	int n = temp->n;
 	int N = temp->N;
-	int n_detectors = detector_coord.size()/3;
+	//int n_detectors = detector_coord.size()/3;
+	int n_detectors = 1;
 
 	U_data u_data;
 	u_data.temp = temp;
@@ -2585,24 +2680,27 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	{
 		coeffs.clear();
 		coeffs.resize(n_detectors*data_dof);
+		#pragma omp parallel for
 		for(int i=0;i<n_detectors*data_dof;i++){
-			coeffs[i] = 0; // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
+			coeffs[i] = 1; // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
 		}
 	}
 
-	El::Matrix<El::Complex<double>> x;
-	El::Gaussian(x,n_detectors,1);
+	El::Grid g(comm, size);
+	El::DistMatrix<El::Complex<double>> x(g); // this needs to be STAR STAR distributed because I need all the random
+																															// coeffs on all processors for creating a tree
+	El::Gaussian(x,1,1); //sum over the detector size on all procs
 
-	El::Matrix<El::Complex<double>> y;
+	El::DistMatrix<El::Complex<double>> y(g);
 	El::Gaussian(y,M/2,1);
 	elemental2tree(y,temp);
 	std::vector<double> filter = {1};
 	temp->FilterChebTree(filter);
 	tree2elemental(temp,y);
 
-	El::Matrix<El::Complex<double>> Ux;
+	El::DistMatrix<El::Complex<double>> Ux(g);
 	El::Zeros(Ux,M/2,1);
-	U_func(x,Ux,u_data);
+	U_func(x,Ux,&u_data);
 	//El::Display(Ux,"Ux");
 	//El::Display(y,"y");
 
@@ -2610,18 +2708,24 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	elemental2tree(Ux,temp1);
 	temp->ConjMultiply(temp1,1);
 	std::vector<double> Uxy = temp->Integrate();
-	std::cout << Uxy[0] << std::endl;
-	std::cout << Uxy[1] << std::endl;
-	std::cout << "=================================" << std::endl;
 
 	// Now do it the other way
-	El::Matrix<El::Complex<double>> Uty;
-	El::Zeros(Uty,n_detectors,1);
+	El::DistMatrix<El::Complex<double>> Uty(g);
+	El::Zeros(Uty,1,1);
 
 	//El::Display(x,"x");
-	Ut_func(y,Uty,u_data);
+	Ut_func(y,Uty,&u_data);
+	//El::Display(x);
+	//El::Display(Uty);
 
-	std::cout << El::Dot(x,Uty) << std::endl;
+	El::Complex<double> xUty = El::Dot(x,Uty);
+
+
+	double d1 = std::min(fabs(Uxy[0]),fabs(El::RealPart(xUty)));
+	double d2 = std::min(fabs(Uxy[1]),fabs(El::ImagPart(xUty)));
+	std::string name = __func__;
+	test_less(1e-6,(fabs(Uxy[0] - El::RealPart(xUty))/d1),name,comm);
+	test_less(1e-6,(fabs(Uxy[1] - El::ImagPart(xUty))/d2),name,comm);
 
 	return 0;
 
@@ -2745,8 +2849,9 @@ int main(int argc, char* argv[]){
   //comp_inc_test(comm);
 	//filter_test(comm);
 	el_test(comm);
-	//UfuncUtfunc_test(comm);
-	//GfuncGtfunc_test(comm);
+	el_test2(comm);
+	UfuncUtfunc_test(comm);
+	GfuncGtfunc_test(comm);
 	El::Finalize();
 	PetscFinalize();
 

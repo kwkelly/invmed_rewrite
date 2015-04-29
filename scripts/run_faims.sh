@@ -1,3 +1,4 @@
 #!/bin/bash
 
-./faims -fmm_m 8 -fmm_q 10 -min_depth 4 -max_depth 4 -k 12 -R_d 15 -N_pts 5
+cd ../build/
+ibrun -np 1 ./faims -fmm_m 8 -fmm_q 10 -min_depth 3 -max_depth 3 -k 5 -R_d 25 -N_pts 10

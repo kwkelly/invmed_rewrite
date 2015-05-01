@@ -13,6 +13,7 @@
 #include <random>
 #include "El.hpp"
 #include <functional>
+#include "rsvd.hpp"
 
 // pt source locations
 std::vector<double> pt_src_locs;
@@ -75,342 +76,7 @@ void MDM(El::DistMatrix<El::Complex<double>> &A,
 	return;
 }
 
-void recsvd(El::DistMatrix<El::Complex<double>> &U,
-		       El::DistMatrix<El::Complex<double>> &S,
-	 				 El::DistMatrix<El::Complex<double>> &Vt,
-	 				 El::DistMatrix<El::Complex<double>> &A
-					 ){
-	// We will overwrite the svd factors
-	// Transform USV^TA to [USV^Ta_1;USV^Ta_2;...USV^Ta_n]
-
-	const El::Grid& g = U.Grid();
-	El::mpi::Comm elcomm = g.Comm();
-	MPI_Comm comm = elcomm.comm;
-	int size, rank;
-	MPI_Comm_size(comm, &size);
-	MPI_Comm_rank(comm, &rank);
-
-
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-
-
-
-	return;
-
-}
-
-
-
-template<class F>
-void rsvd2(El::DistMatrix<El::Complex<double>> &U,
-		       El::DistMatrix<El::Complex<double>> &S,
-	 				 El::DistMatrix<El::Complex<double>> &Vt,
-					 F A,
-					 F At,
-					 int m,
-					 int n,
-					 int r){
-
-	const El::Grid& g = U.Grid();
-	El::mpi::Comm elcomm = g.Comm();
-	MPI_Comm comm = elcomm.comm;
-	int size, rank;
-	MPI_Comm_size(comm, &size);
-	MPI_Comm_rank(comm, &rank);
-
-
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-	El::DistMatrix<El::Complex<double>> rw(g);
-	El::DistMatrix<El::Complex<double>> Q(g); // the projection of omega through A*
-	El::Zeros(Q,m,r);
-
-
-	for(int i=0;i<r;i++){
-		El::Gaussian(rw, n, 1);
-		El::DistMatrix<El::Complex<double>> Y_i = El::View(Q, 0, i, m, 1);
-		A(rw,Y_i);
-	}
-
-	//El::Display(Q,"Q");
-
-	El::DistMatrix<El::Complex<double>> R(g); // the projection of omaga through G*
-	El::qr::Explicit(Q, R, El::QRCtrl<double>());
-
-	//El::DistMatrix<El::Complex<double>> e(g);
-	//El::Zeros(e,r,r);
-	//El::Gemm(El::ADJOINT,El::NORMAL,alpha,Q,Q,beta,e);
-
-	//El::Display(e,"e");
-
-	//std::cout << "Q: " << Q.Height() << " " << Q.Width() << std::endl;
-
-	// Now Q is such that G \approx QQ*G.Thus we can compute GY
-	// Compute it's SVD and then multiply by Q, thus giving the approx 
-	// SVD of G!!!
-
-	El::DistMatrix<El::Complex<double>> GtQ(g);
-	El::Zeros(GtQ,n,r);
-	//El::Matrix<El::Complex<double>> GY_i;
-	for(int i=0;i<r;i++){
-		if(!rank) std::cout << "ChebFMM " << i << std::endl; 
-		El::DistMatrix<El::Complex<double>> Q_i = El::View(Q, 0, i, m, 1);
-		El::DistMatrix<El::Complex<double>> GtQ_i = El::View(GtQ, 0, i, n, 1);
-		At(Q_i,GtQ_i);
-		//El::Display(Q_i,"Q_i");
-		//El::Display(GQ_i,"GQ_i");
-	}
-
-
-	El::DistMatrix<double> s(g);
-	El::Zeros(s,r,1);
-
-	El::DistMatrix<El::Complex<double>> V(g);
-	El::Zeros(V,n,r);
-
-	El::DistMatrix<El::Complex<double>> GQ(g);
-	El::Adjoint(GtQ,GQ);
-	El::SVD(GQ, s, V, El::SVDCtrl<double>());
-
-
-
-	//El::DistMatrix<El::Complex<double>> Vt(g);
-	El::Adjoint(V,Vt);
-
-
-	std::vector<double> d(r);
-	El::DistMatrix<double,El::STAR,El::STAR> s_star = s;
-	d.assign(s_star.Buffer(),s_star.Buffer()+r);
-
-
-	//El::DistMatrix<El::Complex<double>> Sigma(g);
-	El::Zeros(S,r,r);
-	El::Diagonal(S, d);
-
-	// G \approx QQ*G = QU\Sigma\V*
-	// So We take V* and multiply by Q*
-	//El::DistMatrix<El::Complex<double>> U(g);
-	El::Zeros(U,m,r);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,Q,GQ,beta,U);
-
-
-	//El::Display(U,"GQ");
-	//El::Display(Sigma,"Sigma");
-	//El::Display(Vt,"Vt");
-
-
-	//U_G = U;
-	//S_G = Sigma;
-	//Vt_G = Vt;
-
-	return;
-
-}
-
-
-template<class F>
-void
-rsvd(El::DistMatrix<El::Complex<double>> &U,
-		       El::DistMatrix<El::Complex<double>> &S,
-	 				 El::DistMatrix<El::Complex<double>> &Vt,
-					 F A,
-					 F At,
-					 int m,
-					 int n,
-					 int r)
-{
-
-	const El::Grid& g = U.Grid();
-	El::mpi::Comm elcomm = g.Comm();
-	MPI_Comm comm = elcomm.comm;
-	int size, rank;
-	MPI_Comm_size(comm, &size);
-	MPI_Comm_rank(comm, &rank);
-
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-	El::DistMatrix<El::Complex<double>> rw(g);
-	El::DistMatrix<El::Complex<double>> Q(g); // the projection of omega through A*
-	El::Zeros(Q,n,r);
-
-
-	for(int i=0;i<r;i++){
-		El::Gaussian(rw, m, 1);
-		El::DistMatrix<El::Complex<double>> Q_i = El::View(Q, 0, i, n, 1);
-		At(rw,Q_i);
-	}
-
-	//El::Display(Q,"Q");
-
-	El::DistMatrix<El::Complex<double>> R(g); // the projection of omaga through G*
-	El::qr::Explicit(Q, R, El::QRCtrl<double>());
-	/*
-	{
-		El::DistMatrix<El::Complex<double>> e(g);
-		El::Zeros(e,r,r);
-		El::Gemm(El::ADJOINT,El::NORMAL,alpha,Q,Q,beta,e);
-
-		El::Display(e,"e");
-	}
-	*/
-
-
-	// Now Y is such that G* \approx QQ*G*.Thus we can compute GQ
-	// Compute it's SVD and then multiply by Q*, thus giving the approx 
-	// SVD of G!!!
-
-	//El::DistMatrix<El::Complex<double>> GQ(g);
-	El::Zeros(U,m,r);
-	//El::Matrix<El::Complex<double>> GY_i;
-	for(int i=0;i<r;i++){
-		El::DistMatrix<El::Complex<double>> Q_i = El::View(Q, 0, i, n, 1);
-		El::DistMatrix<El::Complex<double>> U_i = El::View(U, 0, i, m, 1);
-		A(Q_i,U_i);
-	}
-
-
-	El::DistMatrix<double> s(g);
-	El::Zeros(s,r,1);
-
-	El::DistMatrix<El::Complex<double>> V(g);
-	El::Zeros(V,r,r);
-
-	El::SVD(U, s, V, El::SVDCtrl<double>());
-
-
-	std::vector<double> d(r);
-	El::DistMatrix<double,El::STAR,El::STAR> s_star = s;
-	d.assign(s_star.Buffer(),s_star.Buffer()+r);
-
-
-	//El::DistMatrix<El::Complex<double>> Sigma(g);
-	El::Zeros(S,r,r);
-	El::Diagonal(S, d);
-
-
-	// G \approx GQQ* = U\Sigma\V*Q*
-	// So We take V* and multiply by Q*
-	//El::DistMatrix<El::Complex<double>> Vt_tilde(g);
-	El::Zeros(Vt,r,n);
-	El::Gemm(El::ADJOINT,El::ADJOINT,alpha,V,Q,beta,Vt);
-
-	//U_G = GQ;
-	//S_G = Sigma;
-	//Vt_G = Vt_tilde;
-
-	return;
-}
-
-
-void svd_test(MPI_Comm &comm, int m, int n, int r){
-	// Set up some trees
-	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	//PetscErrorCode ierr;
-	int size, rank;
-	MPI_Comm_size(comm, &size);
-	MPI_Comm_rank(comm, &rank);
-
-	// Set the scalars for multiplying in Gemm
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-	// Set grid
-	El::Grid g(comm,size);
-
-
-	El::DistMatrix<El::Complex<double>> B1(g);
-	El::DistMatrix<El::Complex<double>> B2(g);
-	El::DistMatrix<El::Complex<double>> A(g);
-	El::DistMatrix<El::Complex<double>> At(g);
-	El::Gaussian(B1,m,r);
-	El::Gaussian(B2,r,n);
-	El::Zeros(A,m,n);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,B1,B2,beta,A);
-	El::Adjoint(A,At);
-
-	El::Helmholtz(A, m*n, alpha);
-	A.Resize(m,n);
-	El::Adjoint(A,At);
-
-	/////////////////////////////////////////////////////////////////
-	// Low rank factorization of A
-	/////////////////////////////////////////////////////////////////
-	if(!rank) std::cout << "Low Rank Factorization of G" << std::endl;
-		
-	using namespace std::placeholders;
-	auto A_sf  = std::bind(rsvd_test_func,_1,_2,&A);
-	auto At_sf = std::bind(rsvd_test_t_func,_1,_2,&At);
-
-	El::DistMatrix<El::Complex<double>> U(g);
-	El::DistMatrix<El::Complex<double>>	S(g);
-	El::DistMatrix<El::Complex<double>> Vt(g);
-
-	rsvd(U,S,Vt,A_sf,At_sf,m,n,r);
-	//rsvd2(U,S,Vt,A_sf,At_sf,m,n,r);
-
-
-	{ // Test the A is good
-
-		El::DistMatrix<El::Complex<double>> US(g);
-		El::DistMatrix<El::Complex<double>>	USVt(g);
-
-		El::DistMatrix<El::Complex<double>> VSt(g);
-		El::DistMatrix<El::Complex<double>>	VStUt(g);
-
-		El::Zeros(US,m,r);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,U,S,beta,US);
-
-		El::Zeros(VSt,n,r);
-		El::Gemm(El::ADJOINT,El::ADJOINT,alpha,Vt,S,beta,VSt);
-
-		El::Zeros(USVt,m,n);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,US,Vt,beta,USVt);
-
-		El::Zeros(VStUt,n,m);
-		El::Gemm(El::NORMAL,El::ADJOINT,alpha,VSt,U,beta,VStUt);
-
-		//El::Display(USVt,"USVt");
-		//El::Display(A,"A");
-
-		El::Axpy(-1.0,A,USVt);
-		El::Axpy(-1.0,At,VStUt);
-
-		//El::Display(USVt,"USVt");
-
-		double ndiff = El::TwoNorm(USVt)/El::TwoNorm(A);
-		if(!rank) std::cout << "Norm diff: " << ndiff << std::endl;
-		ndiff = El::TwoNorm(VStUt)/El::TwoNorm(At);
-		if(!rank) std::cout << "Norm diff: " << ndiff << std::endl;
-
-	}
-	return;
-}
-
-int faims(MPI_Comm &comm, int R_d, int k, int create_number){
+int faims(MPI_Comm &comm, int R_d, int R_s, int k, int create_number){
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
@@ -505,16 +171,8 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	int N_disc = N/2;
 
 	// Set the scalars for multiplying in Gemm
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
-
-	if(!rank) std::cout << "alpha " << alpha << std::endl; 
-	if(!rank) std::cout << "beta " << beta<< std::endl; 
+	auto alpha = make_one<El::Complex<double>>();
+	auto beta = make_zero<El::Complex<double>>();
 
 	G_data g_data;
 	g_data.temp = temp;
@@ -550,7 +208,6 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	/////////////////////////////////////////////////////////////////
 	// Randomize the Incident Field
 	/////////////////////////////////////////////////////////////////
-	int R_s = 1;
 	if(!rank) std::cout << "Incident Field Randomization" << std::endl;
 
 	using namespace std::placeholders;
@@ -567,11 +224,32 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	El::DistMatrix<El::Complex<double>> US_U(g);
 	El::Zeros(US_U,N_disc,R_s);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,U_U,S_U,beta,US_U);
+
+
+	// test that U is ok...
+	{
+		El::DistMatrix<El::Complex<double>> USVt_U(g);
+		El::Zeros(USVt_U,N_disc,N_s);
+		El::Gemm(El::NORMAL,El::NORMAL,alpha,US_U,Vt_U,beta,USVt_U);
+		
+		El::DistMatrix<El::Complex<double>> x(g);
+		El::Gaussian(x,N_s,1);
+
+		El::DistMatrix<El::Complex<double>> y_svd(g);
+		El::Zeros(y_svd,N_disc,1);
+
+		El::DistMatrix<El::Complex<double>> y_ex(g);
+		El::Zeros(y_ex,N_disc,1);
+
+		El::Gemm(El::NORMAL,El::NORMAL,alpha,USVt_U,x,beta,y_svd);
+		U_sf(x,y_ex);
+		Axpy(-1.0,y_ex,y_svd);
+		double ndiff = El::TwoNorm(y_svd)/El::TwoNorm(y_ex);
+
+		if(!rank) std::cout << "Incident Field SVD accuracy: " << ndiff << std::endl;
+
+	}
 	
-	//auto U_rand = U_U;
-
-	temp->Write2File("../results/U_rand",0);
-
 	/////////////////////////////////////////////////////////////////
 	// Compute the scattered field
 	/////////////////////////////////////////////////////////////////
@@ -652,7 +330,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 		
 		El::Axpy(-1.0,i,g1);
 		double ndiff = El::TwoNorm(g1)/El::TwoNorm(i);
-		if(!rank) std::cout << "Norm diff: " << ndiff << std::endl;
+		if(!rank) std::cout << "Relative Error in Approximation of G: " << ndiff << std::endl;
 
 		delete t;
 
@@ -679,7 +357,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	El::DistMatrix<El::Complex<double>>	S_B(g);
 	El::DistMatrix<El::Complex<double>> Vt_B(g);
 
-	//rsvd2(U_B,S_B,Vt_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_s*R_d);
+	rsvd2(U_B,S_B,Vt_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_s*R_d);
 
 	std::cout << "U B H: " << U_B.Height() << std::endl;
 	std::cout << "U B W: " << U_B.Width() << std::endl;
@@ -712,7 +390,7 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 	El::DistMatrix<El::Complex<double>> VtU(g);
 	El::Zeros(VtU,R_d,N_disc);
 
-	MDM(Vt_G,US_U,temp,temp_c);
+	//MDM(Vt_G,US_U,temp,temp_c);
 
 	/////////////////////////////////////////////////////////////////
 	// Now we have Phi_hat = \Sigma Vt_tildeU_rand \eta
@@ -721,11 +399,11 @@ int faims(MPI_Comm &comm, int R_d, int k, int create_number){
 
 	El::DistMatrix<El::Complex<double>> G_eps(g);
 	El::Zeros(G_eps,R_d*R_s,N_disc);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,S_G,Vt_G,beta,G_eps);
-	//El::DistMatrix<El::Complex<double>> G_eps_part(g);
-	//El::Zeros(G_eps_part,R_d*R_s,R_d*R_s);
-	//El::Gemm(El::NORMAL,El::NORMAL,alpha,U_B,S_B,beta,G_eps_part);
-	//El::Gemm(El::NORMAL,El::NORMAL,alpha,G_eps_part,Vt_B,beta,G_eps);
+	//El::Gemm(El::NORMAL,El::NORMAL,alpha,S_G,Vt_G,beta,G_eps);
+	El::DistMatrix<El::Complex<double>> G_eps_part(g);
+	El::Zeros(G_eps_part,R_d*R_s,R_d*R_s);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,U_B,S_B,beta,G_eps_part);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,G_eps_part,Vt_B,beta,G_eps);
 
 	{// test if G_eps is ok
 		El::DistMatrix<El::Complex<double>> r(g);
@@ -940,6 +618,7 @@ int main(int argc, char* argv[]){
 	PetscReal ALPHA = .001;
 	PetscInt N_pts = 8;
 	PetscInt R_d = N_pts/2;
+	PetscInt R_s = R_d;
 	PetscInt k = R_d /2;
 
   PetscErrorCode ierr;
@@ -970,6 +649,7 @@ int main(int argc, char* argv[]){
   PetscOptionsGetInt (NULL, "-N_pts",&             N_pts  ,NULL); // This number gets squared
   PetscOptionsGetInt (NULL, "-R_d",&             R_d  ,NULL); // Reduced rank of detectors
   PetscOptionsGetInt (NULL, "-k",&             k  ,NULL); // rank for truncated svd
+  PetscOptionsGetInt (NULL, "-R_s",&             R_s  ,NULL); // Reduced rank of detectors
 
 	//pvfmm::Profile::Enable(true);
 
@@ -1002,11 +682,11 @@ int main(int argc, char* argv[]){
 	if(!rank){
 		std::cout << "N_pts: " << N_pts << std::endl;
 		std::cout << "R_d: " << R_d << std::endl;
+		std::cout << "R_s: " << R_s << std::endl;
 		std::cout << "k: " << k << std::endl;
 	}
 
-	//faims(comm, R_d, k, N_pts);
-	svd_test(comm,10,20,9);
+	faims(comm, R_d, R_s, k, N_pts);
 	El::Finalize();
 	PetscFinalize();
 

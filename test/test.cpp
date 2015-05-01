@@ -425,7 +425,7 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 
 	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
 	std::vector<double> src_coord;
-	if(!rank){
+	if(rank == 0){
 		src_coord.push_back(0.5);
 		src_coord.push_back(0.5);
 		src_coord.push_back(0.5);
@@ -472,6 +472,188 @@ int ptfmm_trg2tree_test(MPI_Comm &comm){
 
 	return 0;
 }
+
+
+#undef __FUNCT__
+#define __FUNCT__ "ptfmm_trg2tree_test2"
+int ptfmm_trg2tree_test2(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	int rank;
+	int size;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Comm_size(comm,&size);
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = two_pt_sol_fn;
+	sol->f_max = 1;
+
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
+	std::vector<double> src_coord;
+	if(rank == 0){
+		src_coord.push_back(0.33);
+		src_coord.push_back(0.33);
+		src_coord.push_back(0.33);
+	}
+	if(rank == 1){
+		src_coord.push_back(0.66);
+		src_coord.push_back(0.66);
+		src_coord.push_back(0.66);
+	}
+
+	std::vector<double> src_vals = one->ReadVals(src_coord);
+
+	// create the particle fmm tree we need
+
+	std::vector<double> trg_coord = one->ChebPoints();
+
+	// Now we can create the new octree
+	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_vals, trg_coord, comm );
+	// Load matrices.
+	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	matrices->Initialize(mult_order, comm, kernel);
+
+	// FMM Setup
+	pt_tree->SetupFMM(matrices);
+
+
+	//pvfmm::PtFMM_Tree* pt_tree = one->CreatePtFMMTree(src_coord, src_vals, kernel);
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord.size()/3,&src_vals);
+
+	// Insert the values back in
+	one->Trg2Tree(trg_value);
+	one->Add(sol,-1);
+	one->Multiply(mask,1);
+	one->Write2File("../results/difff",10);
+
+	sol->Multiply(mask,1);
+	double rel_norm = one->Norm2()/sol->Norm2();
+
+	std::vector<double> err = {fabs(src_vals[0] - 1), fabs(src_vals[1] - 0)};
+	std::vector<double> errs(2*size);
+	MPI_Allgather(&err[0],2,MPI_DOUBLE,&errs[0],2,MPI_DOUBLE,comm);
+
+	std::string name = __func__;
+	for(int i=0;i<errs.size();i++){
+		test_less(1e-10,errs[i], name, comm);
+	}
+	test_less(1e-6,rel_norm,name,comm);
+
+	delete one;
+	delete sol;
+	delete pt_tree;
+	delete mask;
+	delete matrices;
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "ptfmm_trg2tree_test3"
+int ptfmm_trg2tree_test3(MPI_Comm &comm){
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+
+	int rank;
+	int size;
+	MPI_Comm_rank(comm,&rank);
+	MPI_Comm_size(comm,&size);
+
+	InvMedTree<FMM_Mat_t> *one = new InvMedTree<FMM_Mat_t>(comm);
+	one->bndry = bndry;
+	one->kernel = kernel;
+	one->fn = one_fn;
+	one->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = eight_pt_sol_fn;
+	sol->f_max = 1;
+
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
+	std::vector<double> src_coord = unif_point_distrib(8,.25,.75,comm);
+	//std::cout << "Src coord" << std::endl;
+	//for(int i=0;i<src_coord.size();i++){
+	//	std::cout << src_coord[i] << std::endl;
+	//}
+
+
+	std::vector<double> src_vals = one->ReadVals(src_coord);
+
+	// create the particle fmm tree we need
+
+	std::vector<double> trg_coord = one->ChebPoints();
+
+	// Now we can create the new octree
+	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(src_coord, src_vals, trg_coord, comm );
+	// Load matrices.
+	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	matrices->Initialize(mult_order, comm, kernel);
+
+	// FMM Setup
+	pt_tree->SetupFMM(matrices);
+
+
+	//pvfmm::PtFMM_Tree* pt_tree = one->CreatePtFMMTree(src_coord, src_vals, kernel);
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord.size()/3,&src_vals);
+
+	// Insert the values back in
+	one->Trg2Tree(trg_value);
+	one->Add(sol,-1);
+	one->Multiply(mask,1);
+	one->Write2File("../results/difff",10);
+
+	sol->Multiply(mask,1);
+	double rel_norm = one->Norm2()/sol->Norm2();
+
+	std::string name = __func__;
+	test_less(1e-6,rel_norm,name,comm);
+
+	delete one;
+	delete sol;
+	delete pt_tree;
+	delete mask;
+	delete matrices;
+
+	return 0;
+}
+
+
+
 
 int int_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
@@ -1659,126 +1841,6 @@ int factorize_G_test(MPI_Comm &comm){
 	return 0;
 
 }
-*/
-int GfuncGtfunc_test(MPI_Comm &comm){
-
-	int rank, size;
-	MPI_Comm_size(comm,&size);
-	MPI_Comm_rank(comm,&rank);
-
-	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel;
-	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
-	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
-
-	//std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
-	std::vector<double> detector_coord;
-	if(!rank){
-		detector_coord.push_back(.5);
-		detector_coord.push_back(.5);
-		detector_coord.push_back(.5);
-	}
-	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
-
-	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
-	temp->bndry = bndry;
-	temp->kernel = kernel;
-	temp->fn = zero_fn;
-	temp->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
-	temp1->bndry = bndry;
-	temp1->kernel = kernel;
-	temp1->fn = zero_fn;
-	temp1->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
-	mask->bndry = bndry;
-	mask->kernel = kernel;
-	mask->fn = cmask_fn;
-	mask->f_max = 1;
-
-	// initialize the trees
-	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
-	mask->Write2File("../results/mask",0);
-
-	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-
-	temp->SetupFMM(fmm_mat);
-
-	int m = temp->m;
-	int M = temp->M;
-	int n = temp->n;
-	int N = temp->N;
-	//int n_detectors = detector_coord.size()/3;
-	int n_detectors = 1; // sum of number of detector_coord on each proc
-
-	std::vector<double> detector_samples = temp->ReadVals(detector_coord); //Not sure exactly what this will do...
-	pvfmm::PtFMM_Tree* Gt_tree = temp->CreatePtFMMTree(detector_coord, detector_samples, kernel_conj);
-
-	G_data g_data;
-	g_data.temp = temp;
-	g_data.mask= mask;
-	g_data.src_coord = detector_coord;
-	g_data.pt_tree = Gt_tree;
-
-	El::Grid g(comm,size);
-
-	El::DistMatrix<El::Complex<double>> x(g);
-	El::Gaussian(x,M/2,1);
-	elemental2tree(x,temp);
-	std::vector<double> fvec = {1};
-	temp->FilterChebTree(fvec);
-	tree2elemental(temp,x);
-
-	El::DistMatrix<El::Complex<double>> y(g);
-	El::Gaussian(y,n_detectors,1);
-
-	El::DistMatrix<El::Complex<double>> Gx(g);
-	El::Zeros(Gx,n_detectors,1);
-	G_func(x,Gx,&g_data);
-	//El::Display(Gx,"Gx");
-	//El::Display(y,"y");
-
-	std::cout << El::Dot(y,Gx) << std::endl;
-
-	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Gty(g);
-	El::Zeros(Gty,M/2,1);
-
-	//El::Display(x,"x");
-	Gt_func(y,Gty,&g_data);
-
-	//El::Display(Gty,"Gty");
-	elemental2tree(x,temp);
-	elemental2tree(Gty,temp1);
-	temp->ConjMultiply(temp1,1);
-
-	std::vector<double> xGty = temp->Integrate();
-
-	//El::Complex<double> Gxy = El::Dot(x,Gty);
-	El::Complex<double> Gxy = El::Dot(y,Gx);
-
-	double d1 = std::min(fabs(xGty[0]),fabs(El::RealPart(Gxy)));
-	double d2 = std::min(fabs(xGty[1]),fabs(El::ImagPart(Gxy)));
-
-
-	//std::cout << 	xGty[0] << std::endl;
-	//std::cout << 	El::RealPart(Gxy) << std::endl;
-	//std::cout << 	xGty[1] << std::endl;
-	//std::cout << 	El::ImagPart(Gxy) << std::endl;
-
-	std::string name = __func__;
-	test_less(1e-6,(fabs(xGty[0] - El::RealPart(Gxy)))/d1,name,comm);
-	test_less(1e-6,(fabs(xGty[1] - El::ImagPart(Gxy)))/d2,name,comm);
-
-	return 0;
-
-}
-/*
 int GGt_test(MPI_Comm &comm){
 
 	// Set up some trees
@@ -2472,265 +2534,6 @@ int filter_test(MPI_Comm &comm){
 
 }
 
-#undef __FUNCT__
-#define __FUNCT__ "el_test"
-int el_test(MPI_Comm &comm){
-
-	int size;
-	int rank;
-	MPI_Comm_size(comm,&size);
-	MPI_Comm_rank(comm,&rank);
-
-	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel;
-	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
-
-	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
-	temp->bndry = bndry;
-	temp->kernel = kernel;
-	temp->fn = sc_fn;
-	temp->f_max = 1;
-
-	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
-	temp1->bndry = bndry;
-	temp1->kernel = kernel;
-	temp1->fn = zero_fn;
-	temp1->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *temp2 = new InvMedTree<FMM_Mat_t>(comm);
-	temp2->bndry = bndry;
-	temp2->kernel = kernel;
-	temp2->fn = zero_fn;
-	temp2->f_max = 0;
-
-	// initialize the trees
-	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
-
-
-	int M = temp->M;
-
-	El::Grid g(comm, size);
-
-	El::DistMatrix<El::Complex<double>> A(g);
-	El::Zeros(A,M/2,1); // dividing by data_dof
-
-	tree2elemental(temp,A);
-	//El::Display(A,"A");
-	elemental2tree(A,temp1);
-
-	temp->Write2File("../results/eltestA",0);
-	temp1->Write2File("../results/eltestB",0);
-	temp1->Add(temp,-1);
-	temp1->Write2File("../results/eltestC",0);
-
-	double rel_norm  = temp1->Norm2()/temp->Norm2();
-
-	std::string name = __func__;
-	test_less(1e-6,rel_norm,name,comm);
-
-	delete temp;
-	return 0;
-
-}
-
-#undef __FUNCT__
-#define __FUNCT__ "el_test2"
-int el_test2(MPI_Comm &comm){
-
-	int size;
-	int rank;
-	MPI_Comm_size(comm,&size);
-	MPI_Comm_rank(comm,&rank);
-	int gl_fact = size*(size+1)/2;
-
-	int M = 24*gl_fact;
-	int m = 24*(rank+1);
-
-	El::Grid g(comm, size);
-
-	El::DistMatrix<El::Complex<double>> A(g);
-	El::Gaussian(A,M/2,1); // dividing by data_dof
-
-	El::DistMatrix<El::Complex<double>> A2(g);
-	El::Zeros(A2,M/2,1); // dividing by data_dof
-
-	std::vector<double> vec(m);
-
-	elemental2vec(A,vec);
-
-	//El::Display(A,"A");
-	vec2elemental(vec,A2);
-	El::Axpy(-1.0,A,A2);
-
-	double rel_norm  = El::TwoNorm(A2)/El::TwoNorm(A);
-
-	std::string name = __func__;
-	test_less(1e-6,rel_norm,name,comm);
-
-	/// Now for the Star Star distributed vectors
-
-	int N = 50;
-	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> B(g);
-	El::Gaussian(B,N/2,1); // dividing by data_dof
-
-	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> B2(g);
-	El::Zeros(B2,N/2,1); // dividing by data_dof
-
-	std::vector<double> vec2(N);
-	elstar2vec(B,vec2);
-	vec2elstar(vec2,B2);
-
-	El::Axpy(-1.0,B,B2);
-
-	rel_norm  = El::TwoNorm(B2)/El::TwoNorm(B);
-
-	test_less(1e-6,rel_norm,name,comm);
-
-
-	return 0;
-
-}
-/*
-*/
-int UfuncUtfunc_test(MPI_Comm &comm){
-
-	int rank, size;
-	MPI_Comm_size(comm, &size);
-	MPI_Comm_rank(comm, &rank);
-
-	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel;
-	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
-	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
-
-	int data_dof = 2;
-
-	std::vector<double> detector_coord;
-	if(!rank){
-		detector_coord.push_back(.5);
-		detector_coord.push_back(.5);
-		detector_coord.push_back(.5);
-	}
-	//std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
-	//std::vector<double> detector_coord = {.4,.4,.4,.5,.5,.5,.6,.6,.6};
-	
-	pt_src_locs = {.5,.5,.5}; //think this needs to be global
-	std::cout << "Number gnereated=" << pt_src_locs.size() << std::endl;
-	int n_pt_srcs = pt_src_locs.size()/3;
-
-	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
-	temp->bndry = bndry;
-	temp->kernel = kernel;
-	temp->fn = zero_fn;
-	temp->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
-	temp_c->bndry = bndry;
-	temp_c->kernel = kernel_conj;
-	temp_c->fn = zero_fn;
-	temp_c->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
-	temp1->bndry = bndry;
-	temp1->kernel = kernel;
-	temp1->fn = zero_fn;
-	temp1->f_max = 0;
-
-	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
-	mask->bndry = bndry;
-	mask->kernel = kernel;
-	mask->fn = cmask_fn;
-	mask->f_max = 1;
-
-	// initialize the trees
-	InvMedTree<FMM_Mat_t>::SetupInvMed();
-
-	mask->Write2File("../results/mask",0);
-
-	//FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	//fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-	//temp->SetupFMM(fmm_mat);
-
-	FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
-	fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
-	temp_c->SetupFMM(fmm_mat_c);
-
-	int m = temp->m;
-	int M = temp->M;
-	int n = temp->n;
-	int N = temp->N;
-	//int n_detectors = detector_coord.size()/3;
-	int n_detectors = 1;
-
-	U_data u_data;
-	u_data.temp = temp;
-	u_data.temp_c = temp_c;
-	u_data.mask = mask;
-	u_data.src_coord = detector_coord;
-	u_data.bndry = bndry;
-	u_data.kernel=kernel;
-	u_data.fn = phi_0_fn;
-	u_data.coeffs=&coeffs;
-	u_data.comm=comm;
-
-
-	{
-		coeffs.clear();
-		coeffs.resize(n_detectors*data_dof);
-		#pragma omp parallel for
-		for(int i=0;i<n_detectors*data_dof;i++){
-			coeffs[i] = 1; // we push back all ones when we initially build the trees adaptively so we get a fine enough mesh
-		}
-	}
-
-	El::Grid g(comm, size);
-	El::DistMatrix<El::Complex<double>> x(g); // this needs to be STAR STAR distributed because I need all the random
-																															// coeffs on all processors for creating a tree
-	El::Gaussian(x,1,1); //sum over the detector size on all procs
-
-	El::DistMatrix<El::Complex<double>> y(g);
-	El::Gaussian(y,M/2,1);
-	elemental2tree(y,temp);
-	std::vector<double> filter = {1};
-	temp->FilterChebTree(filter);
-	tree2elemental(temp,y);
-
-	El::DistMatrix<El::Complex<double>> Ux(g);
-	El::Zeros(Ux,M/2,1);
-	U_func(x,Ux,&u_data);
-	//El::Display(Ux,"Ux");
-	//El::Display(y,"y");
-
-	elemental2tree(y,temp);
-	elemental2tree(Ux,temp1);
-	temp->ConjMultiply(temp1,1);
-	std::vector<double> Uxy = temp->Integrate();
-
-	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Uty(g);
-	El::Zeros(Uty,1,1);
-
-	//El::Display(x,"x");
-	Ut_func(y,Uty,&u_data);
-	//El::Display(x);
-	//El::Display(Uty);
-
-	El::Complex<double> xUty = El::Dot(x,Uty);
-
-
-	double d1 = std::min(fabs(Uxy[0]),fabs(El::RealPart(xUty)));
-	double d2 = std::min(fabs(Uxy[1]),fabs(El::ImagPart(xUty)));
-	std::string name = __func__;
-	test_less(1e-6,(fabs(Uxy[0] - El::RealPart(xUty))/d1),name,comm);
-	test_less(1e-6,(fabs(Uxy[1] - El::ImagPart(xUty))/d2),name,comm);
-
-	return 0;
-
-}
-
 int main(int argc, char* argv[]){
 	static char help[] = "\n\
 												-eta        <Real>   Inf norm of \\eta\n\
@@ -2832,11 +2635,13 @@ int main(int argc, char* argv[]){
 	//conj_multiply_test(comm);
 	//conj_multiply_test2(comm);
 	//copy_test(comm);
-	//int_test(comm);
+	int_test(comm);
 	//int_test2(comm);
 	//int_test3(comm);
 	//tree_vec_test(comm);
 	//ptfmm_trg2tree_test(comm);
+	//ptfmm_trg2tree_test2(comm);
+	ptfmm_trg2tree_test3(comm);
 	//mult_op_test(comm);
 	//spectrum_test(comm);
 //	mgs_test(comm);
@@ -2848,10 +2653,6 @@ int main(int argc, char* argv[]){
 //	UUt_test(comm);
   //comp_inc_test(comm);
 	//filter_test(comm);
-	el_test(comm);
-	el_test2(comm);
-	UfuncUtfunc_test(comm);
-	GfuncGtfunc_test(comm);
 	El::Finalize();
 	PetscFinalize();
 

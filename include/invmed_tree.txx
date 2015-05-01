@@ -685,6 +685,7 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
 	std::vector<double> cheb_node_coord3=pvfmm::cheb_nodes<double>(cheb_deg, 3);
 
+	/*
 	size_t n_chebnodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
 
 	std::vector<double> trg_coord;
@@ -702,6 +703,8 @@ pvfmm::PtFMM_Tree* InvMedTree<FMM_Mat_t>::CreatePtFMMTree(std::vector<double> &s
 		}
 	}
 	std::cout << "trg_coord.size(): "  << trg_coord.size() << std::endl;
+	*/
+	std::vector<double> trg_coord = this->ChebPoints();
 
 	// Now we can create the new octree
 	MPI_Barrier(*comm);
@@ -835,7 +838,7 @@ std::vector<double> InvMedTree<FMM_Mat_t>::ReadVals(std::vector<double> &coord){
 	double sum = 0;
 	double temp = 0;
 	for(int i=0;i<size;i++){ // exclusive scan
-			temp = cs_scan[i];
+			temp = cs_all[i];
 			cs_scan[i] = sum;
 			sum += temp;
 	}
@@ -1091,8 +1094,8 @@ double InvMedTree<FMM_Mat_t>::Norm2(){
   }
 
   MPI_Reduce(&l2_loc, &l2_glb, 1, MPI_DOUBLE, MPI_SUM, 0, *c1);
-  return sqrt(l2_glb);
 	MPI_Bcast(&l2_glb, 1, MPI_DOUBLE, 0, *c1);
+  return sqrt(l2_glb);
 
 }
 

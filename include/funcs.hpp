@@ -65,4 +65,9 @@ void mask_fn(const  double* coord, int n, double* out);
 void cmask_fn(const  double* coord, int n, double* out);
 
 void eta2_fn(const  double* coord, int n, double* out);
+
+void two_pt_sol_fn(const double* coord, int n, double* out);
+
+void eight_pt_sol_fn(const double* coord, int n, double* out);
+
 #endif

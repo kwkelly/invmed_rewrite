@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
-set(CMAKE_CXX_COMPILER mpic++)
-set(CMAKE_C_COMPILER mpicc)
-
 project(InvMed CXX C)
 
 function(echo_all_cmake_variable_values)
@@ -46,7 +43,10 @@ add_executable(invmed src/invmed.cpp src/funcs.cpp)
 add_executable(test test/test.cpp src/funcs.cpp)
 add_executable(faims test/faims.cpp src/funcs.cpp)
 add_executable(dist_test test/dist_test.cpp)
+add_executable(faims_tests test/faims_tests.cpp src/funcs.cpp)
 
+find_package(MPI REQUIRED)
+include_directories(${MPI_CXX_INCLUDE_PATH})
 find_package(PETSc REQUIRED)
 include_directories(${PETSC_INCLUDES})
 find_package(pvfmm REQUIRED)
@@ -57,14 +57,16 @@ find_package(Elemental REQUIRED)
 include_directories(${Elemental_INCLUDE_DIRS})
 
 include_directories("include")
+include_directories("../rsvd/include")
 
 message(STATUS ${pvfmm_INCLUDE_DIRS})
 
-set(LIBS ${LIBS} ${PETSC_LIBRARIES} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES})
+set(LIBS ${LIBS} ${PETSC_LIBRARIES} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_DIRECTORIES})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -no-offload -O2 -wd3218 -wd2570 -DFFTW3_MKL -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX -debug -O0 -std=c++11 -ldl -lstdc++ -limf -mkl")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{TACC_IMPI_LIB} -std=c++11 -mkl -g -wd3218 -wd2570 -I/opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
 
 target_link_libraries(invmed ${LIBS})
 target_link_libraries(test ${LIBS})
 target_link_libraries(dist_test ${LIBS})
 target_link_libraries(faims ${LIBS})
+target_link_libraries(faims_tests ${LIBS})

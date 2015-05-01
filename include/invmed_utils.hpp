@@ -3,6 +3,7 @@
 #include "petscsys.h"
 #include "El.hpp"
 #include "par_scan/gen_scan.hpp"
+#include "math_utils.hpp"
 
 #pragma once
 
@@ -141,7 +142,7 @@ void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, doub
 				if (R!=0){
 					R = sqrt(R);
 					double invR=1.0/R;
-					invR = invR/(4*const_pi<double>());
+					invR = invR/(4*pvfmm::const_pi<double>());
 					double G[2]={cos(k*R)*invR, sin(k*R)*invR};
 					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
 					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
@@ -177,7 +178,7 @@ void nonsingular_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, d
 				if (R!=0){
 					R = sqrt(R);
 					double invR=1.0/R;
-					invR = invR/(4*const_pi<double>());
+					invR = invR/(4*pvfmm::const_pi<double>());
 					double G[2]={cos(R), sin(R)};
 					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
 					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
@@ -226,24 +227,135 @@ std::vector<double> randunif(int n_points){
 	return src_points;
 }
 
-
-std::vector<double> equicube(int n_points){
+std::vector<double> randunif(int n_points, double lmin, double lmax){
 	double val;
 	std::vector<double> src_points;
-	double spacing = 1.0/(n_points + 1);
+
+	for (int i = 0; i < n_points; i++) {
+		val = ((double)std::rand()/(double)RAND_MAX);
+		val = val*(lmax-lmin) + lmin;
+		src_points.push_back(val);
+		val = ((double)std::rand()/(double)RAND_MAX);
+		val = val*(lmax-lmin) + lmin;
+		src_points.push_back(val);
+		val = ((double)std::rand()/(double)RAND_MAX);
+		val = val*(lmax-lmin) + lmin;
+		src_points.push_back(val);
+	}
+
+	return src_points;
+}
+
+enum DistribType{
+  UnifGrid,
+  RandUnif,
+  RandGaus,
+  RandElps,
+  RandSphr
+};
+
+
+template <class Real_t>
+std::vector<Real_t> unif_point_distrib(size_t N, Real_t lmin, Real_t lmax, MPI_Comm comm){
+  int np, myrank;
+  MPI_Comm_size(comm, &np);
+  MPI_Comm_rank(comm, &myrank);
+
+  std::vector<Real_t> coord;
+    {
+      size_t NN=(size_t)round(pow((double)N,1.0/3.0));
+      size_t N_total=NN*NN*NN;
+      size_t start= myrank   *N_total/np;
+      size_t end  =(myrank+1)*N_total/np;
+      for(size_t i=start;i<end;i++){
+        coord.push_back( (lmax-lmin) * (((Real_t)((i/  1    )%NN)+0.5)/NN) + lmin);
+        coord.push_back( (lmax-lmin) * (((Real_t)((i/ NN    )%NN)+0.5)/NN) + lmin);
+        coord.push_back( (lmax-lmin) * (((Real_t)((i/(NN*NN))%NN)+0.5)/NN) + lmin);
+      }
+    }
+	return coord;
+}
+
+
+template <class Real_t>
+std::vector<Real_t> rand_unif_point_distrib(size_t N, Real_t lmin, Real_t lmax, MPI_Comm comm){
+  int np, myrank;
+  MPI_Comm_size(comm, &np);
+  MPI_Comm_rank(comm, &myrank);
+  static size_t seed=myrank+1; seed+=np;
+  srand48(seed);
+
+  std::vector<Real_t> coord;
+    {
+      size_t N_total=N;
+      size_t start= myrank   *N_total/np;
+      size_t end  =(myrank+1)*N_total/np;
+      size_t N_local=end-start;
+      coord.resize(N_local*3);
+
+      for(size_t i=0;i<N_local*3;i++)
+        coord[i]=(lmax-lmin)*((Real_t)drand48()) + lmin;
+    }
+		return coord;
+}
+
+template <class Real_t>
+std::vector<Real_t> rand_sph_point_distrib(size_t N, Real_t rad, MPI_Comm comm){
+  int np, myrank;
+  MPI_Comm_size(comm, &np);
+  MPI_Comm_rank(comm, &myrank);
+  static size_t seed=myrank+1; seed+=np;
+  srand48(seed);
+
+	std::vector<Real_t> src_points;
+	std::vector<Real_t> z;
+	std::vector<Real_t> phi;
+	std::vector<Real_t> theta;
+	Real_t val;
+
+	size_t N_total=N;
+	size_t start= myrank   *N_total/np;
+	size_t end  =(myrank+1)*N_total/np;
+	size_t N_local=end-start;
+
+	for (int i = 0; i < N_local; i++) {
+		val = 2*rad*((size_t)drand48()) - rad;
+		z.push_back(val);
+		theta.push_back(asin(z[i]/rad));
+		val = 2*M_PI*((size_t)drand48());
+		phi.push_back(val);
+		src_points.push_back(rad*cos(theta[i])*cos(phi[i])+.5);
+		src_points.push_back(rad*cos(theta[i])*sin(phi[i])+.5);
+		src_points.push_back(z[i]+.5);
+	}
+
+	return src_points;
+}
+
+
+
+std::vector<double> equicube(int n_points, double lmin, double lmax){
+	double val;
+	std::vector<double> src_points;
+	double spacing = (lmax-lmin)/(n_points);
 
 	for (int i = 0; i < n_points; i++) {
 	for (int j = 0; j < n_points; j++) {
 	for (int k = 0; k < n_points; k++) {
-		src_points.push_back(spacing*(i+1));
-		src_points.push_back(spacing*(j+1));
-		src_points.push_back(spacing*(k+1));
+		src_points.push_back(lmin/n_points + spacing*(i+1));
+		src_points.push_back(lmin/n_points + spacing*(j+1));
+		src_points.push_back(lmin/n_points + spacing*(k+1));
 	}
 	}
 	}
 
 	return src_points;
 }
+
+std::vector<double> equicube(int n_points){
+	return equicube(n_points,0,1);
+}
+
 
 std::vector<double> equiplane(int n_points, int plane, double pos){
 	// generate n_points^2 points sources equally spaced on a plane
@@ -826,6 +938,13 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 	std::vector<int> output_sizes(size);
 	int m = (vec.size())/data_dof;
 	int el_l_sz = Y.LocalHeight();
+	int t_sz_el;
+	int t_sz_vec;
+	MPI_Reduce(&el_l_sz, &t_sz_el, 1, MPI_INT,MPI_SUM, 0, comm);
+	MPI_Reduce(&m, &t_sz_vec, 1, MPI_INT,MPI_SUM, 0, comm);
+	if(!rank) assert(t_sz_el == t_sz_vec);
+
+	// check the the total size doesn't change
 
 	MPI_Allgather(&m, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,comm);
 	MPI_Allgather(&el_l_sz, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,comm);
@@ -885,6 +1004,12 @@ int elemental2vec(El::DistMatrix<El::Complex<double>> &Y, std::vector<double> &v
 	std::vector<int> output_sizes(size);
 	int m = (vec.size())/data_dof;
 	int el_l_sz = Y.LocalHeight();
+	// test the total size doesnt change
+	int t_sz_el;
+	int t_sz_vec;
+	MPI_Reduce(&el_l_sz, &t_sz_el, 1, MPI_INT,MPI_SUM, 0, comm);
+	MPI_Reduce(&m, &t_sz_vec, 1, MPI_INT,MPI_SUM, 0, comm);
+	if(!rank) assert(t_sz_el == t_sz_vec);
 
 	MPI_Allgather(&el_l_sz, 1, MPI_INT,&input_sizes[0], 1, MPI_INT,comm);
 	MPI_Allgather(&m, 1, MPI_INT,&output_sizes[0], 1, MPI_INT,comm);
@@ -1866,18 +1991,15 @@ int Gt_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<d
 	MPI_Comm comm = g_data->comm;
 	int rank;
 	MPI_Comm_rank(comm,&rank);
+
 	if(!rank) std::cout << "PtFMM " << std::endl; 
 
 	//int n = y.Height();
-	int n = detector_coord.size()/3*2;
-	std::vector<double> detector_values(n);
+	int n = (temp->ChebPoints()).size()/3;
+	int nd = detector_coord.size()*2/3;
+	std::vector<double> detector_values(nd);
 
 	elemental2vec(y,detector_values);
-	//El::Display(y,"y");
-	//std::cout << "dv" <<std::endl;
-	//for(int i = 0;i<n*2;i++){
-	//	std::cout << detector_values[i] <<std::endl;
-	//}
 
 	Gt_tree->ClearFMMData();
 	std::vector<double> trg_value;
@@ -1891,36 +2013,6 @@ int Gt_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<d
 	return 0;
 }
 
-#undef __FUNCT__
-#define __FUNCT__ "Ut_func"
-int Ut_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, U_data *u_data){
-
-	InvMedTree<FMM_Mat_t>* temp_c = u_data->temp_c;
-	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
-	std::vector<double> src_coord = u_data->src_coord;
-	int rank;
-	MPI_Comm_rank(u_data->comm,&rank);
-
-	// get the input data
-	elemental2tree(y,temp_c);
-	temp_c->Multiply(mask,1);
-
-	// integrate
-	temp_c->ClearFMMData();
-	temp_c->RunFMM();
-	temp_c->Copy_FMMOutput();
-
-	// read at srcs
-	std::vector<double> src_values = temp_c->ReadVals(src_coord);
-	//if(!rank){
-	//	std::cout << src_values[0] << std::endl;
-	//	std::cout << src_values[1] << std::endl;
-	//}
-
-	vec2elemental(src_values,x);	
-
-	return 0;
-}
 
 #undef __FUNCT__
 #define __FUNCT__ "U_func"
@@ -1968,6 +2060,37 @@ int U_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<do
 
 	MPI_Barrier(comm);
 	delete t;
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "Ut_func"
+int Ut_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, U_data *u_data){
+
+	InvMedTree<FMM_Mat_t>* temp_c = u_data->temp_c;
+	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
+	std::vector<double> src_coord = u_data->src_coord;
+	int rank;
+	MPI_Comm_rank(u_data->comm,&rank);
+
+	// get the input data
+	elemental2tree(y,temp_c);
+	temp_c->Multiply(mask,1);
+
+	// integrate
+	temp_c->ClearFMMData();
+	temp_c->RunFMM();
+	temp_c->Copy_FMMOutput();
+
+	// read at srcs
+	std::vector<double> src_values = temp_c->ReadVals(src_coord);
+	//if(!rank){
+	//	std::cout << src_values[0] << std::endl;
+	//	std::cout << src_values[1] << std::endl;
+	//}
+
+	vec2elemental(src_values,x);	
 
 	return 0;
 }
@@ -2044,6 +2167,7 @@ int B_func(
 		elemental2tree(W_i,temp);
 		temp->Multiply(temp_c,1);
 		tree2elemental(temp,Wx_i);
+		//El::Hadamard(W_i,x,Wx_i);
 	}
 
 	std::cout << Wx.Width() << std::endl;
@@ -2066,13 +2190,18 @@ int B_func(
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,*Vt_G,Wx,beta,VtWx);
 	//El::Copy(Vt_G,
 
-	El::Display(VtWx,"VtWx");
+	//El::Display(VtWx,"VtWx");
 
 	El::DistMatrix<El::Complex<double>> SVtWx(g);
 	El::Zeros(SVtWx,R_d,R_s);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,*S_G,VtWx,beta,SVtWx);
 
-	SVtWx.Resize(R_s*R_d,1);
+	//El::Display(SVtWx,"B mat");
+	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> SVtWx2(g);
+	SVtWx2 = SVtWx;
+	SVtWx2.Resize(R_s*R_d,1);
+	SVtWx = SVtWx2;
+	//El::Display(SVtWx,"B vec");
 	y = SVtWx;
 
 	return 0;
@@ -2106,13 +2235,19 @@ int Bt_func(
 	int R_d = Vt_G->Height();
 	int N_disc = W->Height();
 
-	x.Resize(R_d,R_s);
+	//El::Display(x,"Bt vec");
+	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> x2(g);
+	El::DistMatrix<El::Complex<double>> x_copy(g);
+	El::Copy(x,x_copy);
+	x2 = x_copy;
+	x2.Resize(R_d,R_s);
+	x_copy = x2;
 
-	El::Display(x,"x");
+	//El::Display(x,"Bt mat");
 
 	El::DistMatrix<El::Complex<double>> Sx(g);
 	El::Zeros(Sx,R_d,R_s);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x,beta,Sx);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x_copy,beta,Sx);
 
 	El::DistMatrix<El::Complex<double>> VSx(g);
 	El::Zeros(VSx,N_disc,R_s);

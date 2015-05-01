@@ -120,6 +120,51 @@ void ctr_pt_sol_fn(const double* coord, int n, double* out){
 
 }
 
+void two_pt_sol_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+	int dof=2;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r1=sqrt((c[0]-0.33)*(c[0]-0.33)+(c[1]-0.33)*(c[1]-0.33)+(c[2]-0.33)*(c[2]-0.33));
+			double r2=sqrt((c[0]-0.66)*(c[0]-0.66)+(c[1]-0.66)*(c[1]-0.66)+(c[2]-0.66)*(c[2]-0.66));
+			// Assumes that k = 1;
+			if(dof>1) out[i*dof+0]= 1/(4*M_PI*r1)*cos(1*r1) + 1/(4*M_PI*r2)*cos(1*r2);
+			if(dof>1) out[i*dof+1]= 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2);
+		}
+	}
+
+}
+
+
+void eight_pt_sol_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+	int dof=2;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r1=sqrt((c[0]-0.375)*(c[0]-0.375)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.375)*(c[2]-0.375));
+			double r2=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.375)*(c[2]-0.375));
+			double r3=sqrt((c[0]-0.375)*(c[0]-0.375)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.375)*(c[2]-0.375));
+			double r4=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.375)*(c[2]-0.375));
+			double r5=sqrt((c[0]-0.375)*(c[0]-0.375)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.625)*(c[2]-0.625));
+			double r6=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.625)*(c[2]-0.625));
+			double r7=sqrt((c[0]-0.375)*(c[0]-0.375)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.625)*(c[2]-0.625));
+			double r8=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.625)*(c[2]-0.625));
+			// Assumes that k = 1;
+			if(dof>1) out[i*dof+0]= 1/(4*M_PI*r1)*cos(1*r1) + 1/(4*M_PI*r2)*cos(1*r2) +  1/(4*M_PI*r3)*cos(1*r3) +  1/(4*M_PI*r4)*cos(1*r4)
+				+  1/(4*M_PI*r5)*cos(1*r5) +  1/(4*M_PI*r6)*cos(1*r6) +  1/(4*M_PI*r7)*cos(1*r7) +  1/(4*M_PI*r8)*cos(1*r8);
+			if(dof>1) out[i*dof+1]= 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2) +  1/(4*M_PI*r3)*sin(1*r3) +  1/(4*M_PI*r4)*sin(1*r4)
+				+  1/(4*M_PI*r5)*sin(1*r5) +  1/(4*M_PI*r6)*sin(1*r6) +  1/(4*M_PI*r7)*sin(1*r7) +  1/(4*M_PI*r8)*sin(1*r8);
+			//if(dof>1) out[i*dof+1]= 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2);
+		}
+	}
+
+}
+
+
+
+
 void ctr_pt_sol_neg_conj_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
 	int dof=2;

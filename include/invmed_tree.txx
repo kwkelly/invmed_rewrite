@@ -1159,10 +1159,10 @@ std::vector<double> InvMedTree<FMM_Mat_t>::Integrate(){
 		temp_real = temp_real/n_nodes3;
 		temp_im = temp_im/n_nodes3;
 	}
-  MPI_Reduce(&temp_real, &glb_real, 1, MPI_DOUBLE, MPI_SUM, 0, *comm);
-  MPI_Reduce(&temp_im, &glb_im, 1, MPI_DOUBLE, MPI_SUM, 0, *comm);
-	MPI_Bcast(&glb_real, 1, MPI_INT, 0, *comm);
-	MPI_Bcast(&glb_im, 1, MPI_INT, 0, *comm);
+  MPI_Allreduce(&temp_real, &glb_real, 1, MPI_DOUBLE, MPI_SUM, *comm);
+  MPI_Allreduce(&temp_im, &glb_im, 1, MPI_DOUBLE, MPI_SUM, *comm);
+	//MPI_Bcast(&glb_real, 1, MPI_INT, 0, *comm);
+	//MPI_Bcast(&glb_im, 1, MPI_INT, 0, *comm);
 
 	std::vector<double> out = {glb_real, glb_im};
 	return out;

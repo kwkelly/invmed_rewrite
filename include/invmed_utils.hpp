@@ -39,6 +39,8 @@ struct U_data{
 	void (*fn)(const  double* coord, int n, double* out);
 	std::vector<double> *coeffs;
 	MPI_Comm comm;
+	pvfmm::PtFMM_Tree* pt_tree;
+	int n_local_pt_srcs;
 };
 
 
@@ -338,13 +340,14 @@ std::vector<double> equicube(int n_points, double lmin, double lmax){
 	double val;
 	std::vector<double> src_points;
 	double spacing = (lmax-lmin)/(n_points);
+	double offset = lmin/n_points;
 
 	for (int i = 0; i < n_points; i++) {
 	for (int j = 0; j < n_points; j++) {
 	for (int k = 0; k < n_points; k++) {
-		src_points.push_back(lmin/n_points + spacing*(i+1));
-		src_points.push_back(lmin/n_points + spacing*(j+1));
-		src_points.push_back(lmin/n_points + spacing*(k+1));
+		src_points.push_back(offset + spacing*(i+1));
+		src_points.push_back(offset + spacing*(j+1));
+		src_points.push_back(offset + spacing*(k+1));
 	}
 	}
 	}
@@ -357,6 +360,56 @@ std::vector<double> equicube(int n_points){
 }
 
 
+template <class Real_t>
+std::vector<Real_t> unif_plane(size_t N, int plane, Real_t pos, MPI_Comm comm){
+	int np, myrank;
+	MPI_Comm_size(comm, &np);
+	MPI_Comm_rank(comm, &myrank);
+
+	assert(plane == 0 or plane == 1 or plane == 2);
+
+	// generate n_points points sources equally spaced on a plane
+	// plane == 0 = yz plane
+	// plane == 1 = xz plane
+	// plane == 2 = xy plane
+
+	std::vector<Real_t> coord;
+	{
+		size_t NN=(size_t)round(pow((double)N,1.0/2.0));
+		double spacing = 1.0/(NN);
+		size_t N_total=NN*NN;
+		size_t start= myrank   *N_total/np;
+		size_t end  =(myrank+1)*N_total/np;
+		switch(plane){
+			case 0:
+				for(size_t i=start;i<end;i++){
+					coord.push_back( pos                              );
+					coord.push_back( (((Real_t)((i/ 1  )%NN)+0.5)/NN) );
+					coord.push_back( (((Real_t)((i/(NN))%NN)+0.5)/NN) );
+				}
+				break;
+			case 1:
+				for(size_t i=start;i<end;i++){
+					coord.push_back( (((Real_t)((i/  1 )%NN)+0.5)/NN) );
+					coord.push_back( pos                               );
+					coord.push_back( (((Real_t)((i/(NN))%NN)+0.5)/NN) );
+				}
+				break;
+			case 2:
+				for(size_t i=start;i<end;i++){
+					coord.push_back( (((Real_t)((i/  1  )%NN)+0.5)/NN) );
+					coord.push_back( (((Real_t)((i/ NN  )%NN)+0.5)/NN) );
+					coord.push_back( pos                               );
+				}
+				break;
+		}
+	}
+	return coord;
+}
+
+
+
+
 std::vector<double> equiplane(int n_points, int plane, double pos){
 	// generate n_points^2 points sources equally spaced on a plane
 	// plane == 0 = yz plane
@@ -365,6 +418,9 @@ std::vector<double> equiplane(int n_points, int plane, double pos){
 	assert(plane == 0 or plane == 1 or plane == 2);
 	std::vector<double> src_points;
 	double spacing = 1.0/(n_points + 1);
+
+  size_t n=(size_t)round(pow((double)n_points,1.0/2.0));
+	n_points = n;
 
 	if(plane == 0){
 		for (int i = 0; i < n_points; i++) {
@@ -687,7 +743,7 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 template <class FMM_Mat_t, typename El_Complex_Mat_t>
 int elemental2tree(El_Complex_Mat_t &Y, InvMedTree<FMM_Mat_t> *tree){
 	
-	assert((Y.DistData().colDist == El::MC) && (Y.DistData().rowDist == El::MR));
+	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
@@ -721,7 +777,7 @@ int elemental2tree(El_Complex_Mat_t &Y, InvMedTree<FMM_Mat_t> *tree){
 		std::vector<int> rdispls;
 
 		std::vector<El::Complex<double>> indata(input_sizes[rank]);
-		indata.assign(Y.Buffer(),Y.Buffer()+indata.size());
+		indata.assign(Y.LockedBuffer(),Y.LockedBuffer()+indata.size());
 		std::vector<El::Complex<double>> outdata(output_sizes[rank]);
 
 		comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, *comm);
@@ -847,7 +903,7 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 template <class FMM_Mat_t, typename El_Complex_Mat_t>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
 
-	assert((Y.DistData().colDist == El::MC) && (Y.DistData().rowDist == El::MR));
+	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -921,9 +977,8 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
 
 #undef __FUNCT__
 #define __FUNCT__ "vec2elemental"
-int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double> > &Y){
+int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>,El::VR,El::STAR > &Y){
 
-	//assert((Y.DistData().colDist == El::STAR) && (Y.DistData().rowDist == El::STAR));
 	const El::Grid& g = Y.Grid();
 	El::mpi::Comm elcomm = g.Comm();
 	MPI_Comm comm = elcomm.comm;
@@ -987,9 +1042,7 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 
 #undef __FUNCT__
 #define __FUNCT__ "elemental2vec"
-int elemental2vec(El::DistMatrix<El::Complex<double>> &Y, std::vector<double> &vec){
-
-	//assert((Y.DistData().colDist == El::STAR) && (Y.DistData().rowDist == El::STAR));
+int elemental2vec(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &Y, std::vector<double> &vec){
 
 	const El::Grid& g = Y.Grid();
 	El::mpi::Comm elcomm = g.Comm();
@@ -1020,7 +1073,7 @@ int elemental2vec(El::DistMatrix<El::Complex<double>> &Y, std::vector<double> &v
 	std::vector<int> rdispls;
 
 	std::vector<El::Complex<double>> indata(input_sizes[rank]);
-	indata.assign(Y.Buffer(),Y.Buffer()+indata.size());
+	indata.assign(Y.LockedBuffer(),Y.LockedBuffer()+indata.size());
 	std::vector<El::Complex<double>> outdata(output_sizes[rank]);
 
 	comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, comm);
@@ -1041,9 +1094,9 @@ int elemental2vec(El::DistMatrix<El::Complex<double>> &Y, std::vector<double> &v
 
 #undef __FUNCT__
 #define __FUNCT__ "elstar2vec"
-int elstar2vec(El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> &Y, std::vector<double> &vec){
+int elstar2vec(const El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> &Y, std::vector<double> &vec){
 
-	El::Complex<double> *Y_ptr = Y.Buffer();
+	const El::Complex<double> *Y_ptr = Y.LockedBuffer();
 	int sz = vec.size()/2;
 	#pragma omp parallel for
 	for(int i=0;i<sz; i++){
@@ -1956,7 +2009,7 @@ PetscErrorCode LR_mult(Mat M, Vec U, Vec Y){
 
 #undef __FUNCT__
 #define __FUNCT__ "G_func"
-int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, G_data *g_data){
+int G_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, G_data *g_data){
 
 	// This function simply computes the convolution of G with an input U
 	// and then gets only the output at the detector locations
@@ -1982,7 +2035,7 @@ int G_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<do
 
 #undef __FUNCT__
 #define __FUNCT__ "Gt_func"
-int Gt_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, G_data *g_data){
+int Gt_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, G_data *g_data){
 
 	std::vector<double> detector_coord = g_data->src_coord;
 	pvfmm::PtFMM_Tree* Gt_tree = g_data->pt_tree;
@@ -2016,9 +2069,12 @@ int Gt_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<d
 
 #undef __FUNCT__
 #define __FUNCT__ "U_func"
-int U_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<double>> &y, U_data *u_data){
+int U_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, U_data *u_data){
 	// u  is the vector containing the random coefficients for each of the point sources
 
+	if((x.ColAlign() != y.ColAlign()) or (x.RowAlign() != y.RowAlign())){
+		El::LogicError("x and y must have the same distribution");
+	}
 	//El::Grid& g = x.Grid();
 	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> x_star = x;
 	
@@ -2066,7 +2122,12 @@ int U_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::Complex<do
 
 #undef __FUNCT__
 #define __FUNCT__ "Ut_func"
-int Ut_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<double>> &x, U_data *u_data){
+int Ut_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, U_data *u_data){
+
+
+	if((x.ColAlign() != y.ColAlign()) or (x.RowAlign() != y.RowAlign())){
+		El::LogicError("x and y must have the same distribution");
+	}
 
 	InvMedTree<FMM_Mat_t>* temp_c = u_data->temp_c;
 	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
@@ -2091,6 +2152,41 @@ int Ut_func(El::DistMatrix<El::Complex<double>> &y, El::DistMatrix<El::Complex<d
 	//}
 
 	vec2elemental(src_values,x);	
+
+	return 0;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "U_func2"
+int U_func2(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, U_data *u_data){
+	// u  is the vector containing the random coefficients for each of the point sources
+
+	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
+	InvMedTree<FMM_Mat_t>* temp = u_data->temp;
+	MPI_Comm comm               = u_data->comm;
+	pvfmm::PtFMM_Tree* pt_tree  = u_data->pt_tree;
+
+	int rank;
+	MPI_Comm_rank(comm, &rank);
+
+	int n_local_pt_srcs = u_data->n_local_pt_srcs;
+	std::vector<double> coeffs(n_local_pt_srcs*2);
+	elemental2vec(x,coeffs);
+
+	std::vector<double> trg_coord = temp->ChebPoints();
+
+
+	std::vector<double> trg_value;
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord.size()/3,&coeffs);
+
+	temp->Trg2Tree(trg_value);
+
+	// convert the tree into a vector. This vector represents the function
+	// that we passed into the tree constructor (which contains the current 
+	// random coefficients).
+	temp->Multiply(mask,1);
+	//temp->Write2File("../results/ufunc",0);
+	tree2elemental(temp,y);
 
 	return 0;
 }
@@ -2137,11 +2233,11 @@ int rsvd_test_t_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::
 #undef __FUNCT__
 #define __FUNCT__ "B_func"
 int B_func(
-		El::DistMatrix<El::Complex<double>> &x,
-		El::DistMatrix<El::Complex<double>> &y,
-		El::DistMatrix<El::Complex<double>> *S_G,
-		El::DistMatrix<El::Complex<double>> *Vt_G,
-		El::DistMatrix<El::Complex<double>> *W,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *Vt_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c
 		)
@@ -2150,30 +2246,41 @@ int B_func(
 	int R_d = Vt_G->Height();
 	int N_disc = W->Height();
 
-	std::cout << "R_s: " << R_s << std::endl;
-	std::cout << "R_d: " << R_d << std::endl;
-	std::cout << "N_disc: " << N_disc << std::endl;
+	//std::cout << "R_s: " << R_s << std::endl;
+	//std::cout << "R_d: " << R_d << std::endl;
+	//std::cout << "N_disc: " << N_disc << std::endl;
 
 	const El::Grid& g = x.Grid();
 
 	elemental2tree(x,temp_c);
 
-	El::DistMatrix<El::Complex<double>> Wx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Wx(g);
 	El::Zeros(Wx,N_disc,R_s);
 
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>> W_i = El::View(*W, i, 0, N_disc, 1);
-		El::DistMatrix<El::Complex<double>> Wx_i = El::View(Wx, i, 0, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
+		//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> xa(g);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Wx_i = El::View(Wx, 0, i, N_disc, 1);
 		elemental2tree(W_i,temp);
 		temp->Multiply(temp_c,1);
 		tree2elemental(temp,Wx_i);
-		//El::Hadamard(W_i,x,Wx_i);
+		//std::cout << x.Height() - W_i.Height() << std::endl;
+		//std::cout << x.Width() - W_i.Width() << std::endl;
+		//xa.AlignWith(W_i.DistData());
+		//xa = x;
+		//std::cout << "W_i C: " << W_i.ColAlign() << std::endl;
+		//std::cout << "x C: " << x.ColAlign() << std::endl;
+		//std::cout << "W_i R: " << W_i.RowAlign() << std::endl;
+		//std::cout << "x R: " << W_i.RowAlign() << std::endl;
+		//std::cout << x.Height() - W_i.Height() << std::endl;
+		//std::cout << x.Width() - W_i.Width() << std::endl;
+		//El::Hadamard(W_i,xa,Wx_i);
 	}
 
-	std::cout << Wx.Width() << std::endl;
-	std::cout << Wx.Height() << std::endl;
-	std::cout << Vt_G->Width() << std::endl;
-	std::cout << Vt_G->Height() << std::endl;
+	//std::cout << Wx.Width() << std::endl;
+	//std::cout << Wx.Height() << std::endl;
+	//std::cout << Vt_G->Width() << std::endl;
+	//std::cout << Vt_G->Height() << std::endl;
 
 	El::Complex<double> alpha;
 	El::SetRealPart(alpha,1.0);
@@ -2184,7 +2291,8 @@ int B_func(
 	El::SetImagPart(beta,0.0);
 
 
-	El::DistMatrix<El::Complex<double>> VtWx(g);
+	//El::Display(Wx,"Wx");
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VtWx(g);
 	El::Zeros(VtWx,R_d,R_s);
 	//MDM(Vt_G,Wx,temp,temp_c);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,*Vt_G,Wx,beta,VtWx);
@@ -2192,17 +2300,18 @@ int B_func(
 
 	//El::Display(VtWx,"VtWx");
 
-	El::DistMatrix<El::Complex<double>> SVtWx(g);
-	El::Zeros(SVtWx,R_d,R_s);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,*S_G,VtWx,beta,SVtWx);
+	//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> SVtWx(g);
+	//El::Zeros(SVtWx,R_d,R_s);
+	//El::Gemm(El::NORMAL,El::NORMAL,alpha,*S_G,VtWx,beta,SVtWx);
+	El::DiagonalScale(El::LEFT,El::NORMAL,*S_G,VtWx);
 
-	//El::Display(SVtWx,"B mat");
+	//El::Display(VtWx,"B mat");
 	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> SVtWx2(g);
-	SVtWx2 = SVtWx;
+	SVtWx2 = VtWx;
 	SVtWx2.Resize(R_s*R_d,1);
-	SVtWx = SVtWx2;
+	VtWx = SVtWx2;
 	//El::Display(SVtWx,"B vec");
-	y = SVtWx;
+	y = VtWx;
 
 	return 0;
 }
@@ -2210,11 +2319,11 @@ int B_func(
 #undef __FUNCT__
 #define __FUNCT__ "Bt_func"
 int Bt_func(
-		El::DistMatrix<El::Complex<double>> &x,
-		El::DistMatrix<El::Complex<double>> &y,
-		El::DistMatrix<El::Complex<double>> *S_G,
-		El::DistMatrix<El::Complex<double>> *Vt_G,
-		El::DistMatrix<El::Complex<double>> *W,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *Vt_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c
 		)
@@ -2237,7 +2346,7 @@ int Bt_func(
 
 	//El::Display(x,"Bt vec");
 	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> x2(g);
-	El::DistMatrix<El::Complex<double>> x_copy(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x_copy(g);
 	El::Copy(x,x_copy);
 	x2 = x_copy;
 	x2.Resize(R_d,R_s);
@@ -2245,13 +2354,14 @@ int Bt_func(
 
 	//El::Display(x,"Bt mat");
 
-	El::DistMatrix<El::Complex<double>> Sx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Sx(g);
 	El::Zeros(Sx,R_d,R_s);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x_copy,beta,Sx);
+	//El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x_copy,beta,Sx);
+	El::DiagonalScale(El::LEFT,El::ADJOINT,*S_G,x_copy);
 
-	El::DistMatrix<El::Complex<double>> VSx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx(g);
 	El::Zeros(VSx,N_disc,R_s);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*Vt_G,Sx,beta,VSx);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*Vt_G,x_copy,beta,VSx);
 
 
 	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
@@ -2263,12 +2373,15 @@ int Bt_func(
 
 
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>> VSx_i = El::View(VSx, i, 0, N_disc, 1);
-		El::DistMatrix<El::Complex<double>> W_i = El::View(*W, i, 0, N_disc, 1);
-		elemental2tree(W_i,temp);
-		elemental2tree(VSx_i,temp_c);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx_i = El::View(VSx, 0, i, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
+		//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y_i(g);
+		//El::Zeros(y_i,N_disc,1);
+		elemental2tree(W_i,temp_c);
+		elemental2tree(VSx_i,temp);
 		temp->ConjMultiply(temp_c,1);
 		t->Add(temp,1);
+		//El::Hadamard(W_i,VSx_i,y_i);
 	}
 	tree2elemental(t,y);
 

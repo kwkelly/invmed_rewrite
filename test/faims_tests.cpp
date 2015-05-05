@@ -77,7 +77,7 @@ int el_test(MPI_Comm &comm){
 
 	El::Grid g(comm, size);
 
-	El::DistMatrix<El::Complex<double>> A(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> A(g);
 	El::Zeros(A,M/2,1); // dividing by data_dof
 
 	tree2elemental(temp,A);
@@ -115,10 +115,10 @@ int el_test2(MPI_Comm &comm){
 
 	El::Grid g(comm, size);
 
-	El::DistMatrix<El::Complex<double>> A(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> A(g);
 	El::Gaussian(A,M/2,1); // dividing by data_dof
 
-	El::DistMatrix<El::Complex<double>> A2(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> A2(g);
 	El::Zeros(A2,M/2,1); // dividing by data_dof
 
 	std::vector<double> vec(m);
@@ -153,6 +153,124 @@ int el_test2(MPI_Comm &comm){
 
 	test_less(1e-6,rel_norm,name,comm);
 
+
+	return 0;
+
+}
+
+
+int Ufunc2_test(MPI_Comm &comm){
+
+	int rank, size;
+	MPI_Comm_size(comm, &size);
+	MPI_Comm_rank(comm, &rank);
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+	int data_dof = 2;
+
+	pt_src_locs = unif_point_distrib(8,.25,.75,comm);
+
+	int n_local_pt_srcs = pt_src_locs.size()/3;
+	int n_pt_srcs;
+	MPI_Allreduce(&n_local_pt_srcs,&n_pt_srcs,1,MPI_INT,MPI_SUM,comm);
+
+	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
+	temp->bndry = bndry;
+	temp->kernel = kernel;
+	temp->fn = zero_fn;
+	temp->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *temp_c = new InvMedTree<FMM_Mat_t>(comm);
+	temp_c->bndry = bndry;
+	temp_c->kernel = kernel_conj;
+	temp_c->fn = zero_fn;
+	temp_c->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
+	temp1->bndry = bndry;
+	temp1->kernel = kernel;
+	temp1->fn = zero_fn;
+	temp1->f_max = 0;
+
+	InvMedTree<FMM_Mat_t> *mask = new InvMedTree<FMM_Mat_t>(comm);
+	mask->bndry = bndry;
+	mask->kernel = kernel;
+	mask->fn = cmask_fn;
+	mask->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *sol = new InvMedTree<FMM_Mat_t>(comm);
+	sol->bndry = bndry;
+	sol->kernel = kernel;
+	sol->fn = eight_pt_sol_fn;
+	sol->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+
+	//FMM_Mat_t *fmm_mat=new FMM_Mat_t;
+	//fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
+	//temp->SetupFMM(fmm_mat);
+	int mult_order = InvMedTree<FMM_Mat_t>::mult_order;
+	std::vector<double> src_vals = temp->ReadVals(pt_src_locs);
+	std::vector<double> trg_coord = temp->ChebPoints();
+	
+	pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(pt_src_locs, src_vals, trg_coord, comm );
+	// Load matrices.
+	pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
+	matrices->Initialize(mult_order, comm, kernel);
+
+	// FMM Setup
+	pt_tree->SetupFMM(matrices);
+
+	int m = temp->m;
+	int M = temp->M;
+	int n = temp->n;
+	int N = temp->N;
+
+	U_data u_data;
+	u_data.temp = temp;
+	u_data.temp_c = temp_c;
+	u_data.mask = mask;
+	//u_data.src_coord = detector_coord;
+	u_data.n_local_pt_srcs=n_local_pt_srcs;
+	u_data.bndry = bndry;
+	u_data.kernel=kernel;
+	u_data.fn = phi_0_fn;
+	u_data.coeffs=&coeffs;
+	u_data.comm=comm;
+	u_data.pt_tree=pt_tree;
+
+	El::Grid g(comm, size);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(n_pt_srcs,1,g);
+	El::Fill(x,El::Complex<double>(1.0)); 
+	El::Display(x);
+
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Ux(g);
+	El::Zeros(Ux,M/2,1);
+	U_func2(x,Ux,&u_data);
+
+	elemental2tree(Ux,temp);
+	sol->Multiply(mask,1);
+	temp->Add(sol,-1);
+
+	double rel_err = temp->Norm2()/sol->Norm2();
+
+	std::string name = __func__;
+	test_less(1e-6,rel_err,name,comm);
+
+	delete matrices;
+	delete temp;
+	delete temp_c;
+	delete temp1;
+	delete mask;
+	delete pt_tree;
+	delete sol;
 
 	return 0;
 
@@ -276,11 +394,11 @@ int Ufunc_test(MPI_Comm &comm){
 	vec2elstar(input,x);
 
 
-	El::DistMatrix<El::Complex<double>> x1(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x1(g);
 	El::Zeros(x1,n_detectors,1); 
 	x1 = x;
 
-	El::DistMatrix<El::Complex<double>> Ux(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Ux(g);
 	El::Zeros(Ux,M/2,1);
 	U_func(x1,Ux,&u_data);
 
@@ -292,6 +410,12 @@ int Ufunc_test(MPI_Comm &comm){
 
 	std::string name = __func__;
 	test_less(1e-6,rel_err,name,comm);
+
+	delete temp;
+	delete temp_c;
+	delete temp1;
+	delete mask;
+	delete sol;
 
 	return 0;
 
@@ -391,16 +515,16 @@ int Utfunc_test(MPI_Comm &comm){
 	}
 
 	El::Grid g(comm, size);
-	El::DistMatrix<El::Complex<double>> x(g); 
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g); 
 	El::Gaussian(x,n_detectors,1); //sum over the detector size on all procs
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Zeros(y,M/2,1);
 	tree2elemental(temp1,y);
 
 
 	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Uty(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Uty(g);
 	El::Zeros(Uty,n_detectors,1);
 
 	Ut_func(y,Uty,&u_data);
@@ -515,17 +639,17 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	}
 
 	El::Grid g(comm, size);
-	El::DistMatrix<El::Complex<double>> x(g); 
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g); 
 	El::Gaussian(x,n_detectors,1); //sum over the detector size on all procs
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Gaussian(y,M/2,1);
 	elemental2tree(y,temp);
 	std::vector<double> filter = {1};
 	temp->FilterChebTree(filter);
 	tree2elemental(temp,y);
 
-	El::DistMatrix<El::Complex<double>> Ux(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Ux(g);
 	El::Zeros(Ux,M/2,1);
 	U_func(x,Ux,&u_data);
 	//El::Display(Ux,"Ux");
@@ -537,7 +661,7 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	std::vector<double> Uxy = temp->Integrate();
 
 	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Uty(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Uty(g);
 	El::Zeros(Uty,n_detectors,1);
 
 	Ut_func(y,Uty,&u_data);
@@ -622,15 +746,15 @@ int Gfunc_test(MPI_Comm &comm){
 
 	El::Grid g(comm,size);
 
-	El::DistMatrix<El::Complex<double>> x(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g);
 	El::Zeros(x,M/2,1);
 	tree2elemental(test_fn,x);
 
-	El::DistMatrix<El::Complex<double>> Gx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gx(g);
 	El::Zeros(Gx,n_detectors,1);
 	G_func(x,Gx,&g_data);
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Zeros(y,n_detectors,1);
 
 	std::vector<double> detector_samples = sol->ReadVals(detector_coord); //Not sure exactly what this will do...
@@ -721,13 +845,13 @@ int Gtfunc_test(MPI_Comm &comm){
 	El::Grid g(comm,size);
 
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Zeros(y,n_detectors,1);
 	vec2elemental(detector_samples,y);
 	//El::Gaussian(y,n_detectors,1);
 
 	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Gty(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gty(g);
 	El::Zeros(Gty,M/2,1);
 
 	Gt_func(y,Gty,&g_data);
@@ -814,7 +938,7 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 
 	El::Grid g(comm,size);
 
-	El::DistMatrix<El::Complex<double>> x(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g);
 	//El::Gaussian(x,M/2,1);
 	El::Zeros(x,M/2,1);
 	//elemental2tree(x,temp);
@@ -822,15 +946,15 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 	//temp->FilterChebTree(fvec);
 	tree2elemental(smooth,x);
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Gaussian(y,n_detectors,1);
 
-	El::DistMatrix<El::Complex<double>> Gx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gx(g);
 	El::Zeros(Gx,n_detectors,1);
 	G_func(x,Gx,&g_data);
 
 	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Gty(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gty(g);
 	El::Zeros(Gty,M/2,1);
 
 	Gt_func(y,Gty,&g_data);
@@ -871,14 +995,20 @@ int BfuncBtfunc_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
 	temp->bndry = bndry;
 	temp->kernel = kernel;
-	temp->fn = zero_fn;
-	temp->f_max = 0;
+	temp->fn = one_fn;
+	temp->f_max = 1;
 
 	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
 	temp1->bndry = bndry;
 	temp1->kernel = kernel;
-	temp1->fn = zero_fn;
-	temp1->f_max = 0;
+	temp1->fn = one_fn;
+	temp1->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *smooth = new InvMedTree<FMM_Mat_t>(comm);
+	smooth->bndry = bndry;
+	smooth->kernel = kernel;
+	smooth->fn = prod_fn;
+	smooth->f_max = 1;
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
@@ -889,81 +1019,83 @@ int BfuncBtfunc_test(MPI_Comm &comm){
 	int N = temp->N;
 
 	int N_disc = M/2;
-	int R_d = 5;
-	int R_s = 5;
+	int R_d = 10;
+	int R_s = 10;
 
 	El::Grid g(comm,size);
 
-	El::DistMatrix<El::Complex<double>> S_G(g);
-	El::Gaussian(S_G,R_d,R_d);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> S_G(g);
+	El::Gaussian(S_G,R_d,1);
+	//El::Fill(S_G,El::Complex<double>(1));
 
-	El::DistMatrix<El::Complex<double>> Vt_G(g);
-	El::Gaussian(Vt_G,R_d,N_disc);
-
-	El::DistMatrix<El::Complex<double>> US_U(g);
-	El::Gaussian(US_U,N_disc,R_s);
-
-	// filter the one of the inputs..
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G(g);
+	El::Gaussian(V_G,N_disc,R_d);
+	//El::Fill(Vt_G,El::Complex<double>(1));
+	//El::Identity(Vt_G,R_d,N_disc);
 	std::vector<double> fvec = {1};
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>> W_i = El::View(US_U, i, 0, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(V_G, 0, i, N_disc, 1);
+		elemental2tree(W_i,temp);
+		temp->FilterChebTree(fvec);
+		tree2elemental(temp,W_i);
+	}
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_G(g);
+	El::Adjoint(V_G,Vt_G);
+
+
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U(g);
+	El::Gaussian(US_U,N_disc,R_s);
+//	El::Zeros(US_U,N_disc,R_s);
+//	El::Fill(US_U,El::Complex<double>(1));
+
+	// filter the one of the inputs..
+	for(int i=0;i<R_s;i++){
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(US_U, 0, i, N_disc, 1);
 		elemental2tree(W_i,temp);
 		temp->FilterChebTree(fvec);
 		tree2elemental(temp,W_i);
 	}
 
 	// create and then filter input vector
-	El::DistMatrix<El::Complex<double>> x(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g);
 	El::Gaussian(x,N_disc,1);
-	elemental2tree(x,temp);
-	temp->FilterChebTree(fvec);
-	tree2elemental(temp,x);
+	//elemental2tree(x,temp);
+	//temp->FilterChebTree(fvec);
+	tree2elemental(smooth,x);
 
-	El::DistMatrix<El::Complex<double>> y(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y(g);
 	El::Gaussian(y,R_s*R_d,1);
 
-	El::DistMatrix<El::Complex<double>> Bx(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Bx(g);
 	El::Zeros(Bx,R_s*R_d,1);
 
 	using namespace std::placeholders;
 	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp1);
 	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp1);
 
-	//El::DistMatrix<El::Complex<double>> U_B(g);
-	//El::DistMatrix<El::Complex<double>>	S_B(g);
-	//El::DistMatrix<El::Complex<double>> Vt_B(g);
-
-	//rsvd2(U_B,S_B,Vt_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_s*R_d);
-
-	std::cout << "h1" << std::endl;
 	B_sf(x,Bx);
-	std::cout << "h2" << std::endl;
 
 	// Now do it the other way
-	El::DistMatrix<El::Complex<double>> Bty(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Bty(g);
 	El::Zeros(Bty,N_disc,1);
 
-	std::cout << "h3" << std::endl;
 	Bt_sf(y,Bty);
-	std::cout << "h4" << std::endl;
 
 	elemental2tree(x,temp);
 	elemental2tree(Bty,temp1);
 	temp->ConjMultiply(temp1,1);
-	std::cout << "h5" << std::endl;
 
 	std::vector<double> xBty = temp->Integrate();
 
-	std::cout << "h6" << std::endl;
-	std::cout << "BH: " << Bx.Height() << std::endl;
-	std::cout << "BW: " << Bx.Width() << std::endl;
-	std::cout << "yH: " << y.Height() << std::endl;
-	std::cout << "yW: " << y.Width() << std::endl;
 	El::Complex<double> Bxy = El::Dot(y,Bx);
-	std::cout << "h7" << std::endl;
+	//El::Display(y,"y");
+	//El::Display(Bx,"Bx");
 
 	double d1 = std::min(fabs(xBty[0]),fabs(El::RealPart(Bxy)));
 	double d2 = std::min(fabs(xBty[1]),fabs(El::ImagPart(Bxy)));
+
+	//std::cout << xBty[0] << "  " << xBty[1] << std::endl;
+	//std::cout << Bxy << std::endl;
 
 	std::string name = __func__;
 	test_less(1e-6,(fabs(xBty[0] - El::RealPart(Bxy)))/d1,name,comm);
@@ -1072,13 +1204,14 @@ int main(int argc, char* argv[]){
 	//////////////////////////////////////////////
 	//el_test(comm);
 	//el_test2(comm);
-	Utfunc_test(comm);
-	Ufunc_test(comm);
-	UfuncUtfunc_test(comm);
+	//Ufunc2_test(comm);
+	//Utfunc_test(comm);
+	//Ufunc_test(comm);
+	//UfuncUtfunc_test(comm);
+	BfuncBtfunc_test(comm);
 	//Gtfunc_test(comm);
 	//Gfunc_test(comm);
-	GfuncGtfunc_test(comm);
-	//BfuncBtfunc_test(comm);
+	//GfuncGtfunc_test(comm);
 	El::Finalize();
 	PetscFinalize();
 

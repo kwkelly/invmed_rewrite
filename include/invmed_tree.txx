@@ -1196,3 +1196,30 @@ void InvMedTree<FMM_Mat_t>::FilterChebTree(std::vector<double>& coeff_scaling){
     }
   }
 }
+
+
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::Zero(){
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+
+	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
+  if(!nlist.size()) return;
+
+  int cheb_deg=nlist[0]->ChebDeg();
+  int n_coeff=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+  int data_dim=nlist[0]->ChebData().Dim()/n_coeff;
+  assert(data_dim*n_coeff==nlist[0]->ChebData().Dim());
+
+  #pragma omp parallel for
+  for(size_t i=0;i<nlist.size();i++){
+    pvfmm::Vector<double>& cheb_data=nlist[i]->ChebData();
+    size_t idx=0;
+    for(size_t j=0;j<data_dim;j++)
+    for(size_t j0=0;j0      <=cheb_deg;j0++)
+    for(size_t j1=0;j0+j1   <=cheb_deg;j1++)
+    for(size_t j2=0;j0+j1+j2<=cheb_deg;j2++){
+      cheb_data[idx]=0;
+      idx++;
+    }
+  }
+}

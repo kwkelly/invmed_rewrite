@@ -65,6 +65,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   void CreateTree(bool adap);
 	void Copy(InvMedTree<FMM_Mat_t>* other);
 	void FilterChebTree(std::vector<double>& coeff_scaling);
+	void Zero();
 	pvfmm::PtFMM_Tree* CreatePtFMMTree(std::vector<double> &src_coord, std::vector<double> &src_value, const pvfmm::Kernel<double>* kernel);
 	void Trg2Tree(std::vector<double> &trg_value);
 	std::vector<double> ReadVals(std::vector<double> &coord);

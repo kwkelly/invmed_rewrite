@@ -38,6 +38,7 @@ struct U_data{
 	const pvfmm::Kernel<double>* kernel;
 	void (*fn)(const  double* coord, int n, double* out);
 	std::vector<double> *coeffs;
+	int trg_coord_size;
 	MPI_Comm comm;
 	pvfmm::PtFMM_Tree* pt_tree;
 	int n_local_pt_srcs;
@@ -2020,7 +2021,7 @@ int G_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::Dis
 	MPI_Comm comm = g_data->comm;
 	int rank;
 	MPI_Comm_rank(comm,&rank);
-	if(!rank) std::cout << "ChebFMM " << std::endl; 
+	if(!rank) std::cout << "G function " << std::endl; 
 
 	elemental2tree(x,temp);
 	temp->Multiply(mask,1);
@@ -2045,7 +2046,7 @@ int Gt_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::Di
 	int rank;
 	MPI_Comm_rank(comm,&rank);
 
-	if(!rank) std::cout << "PtFMM " << std::endl; 
+	if(!rank) std::cout << "G* function " << std::endl; 
 
 	//int n = y.Height();
 	int n = (temp->ChebPoints()).size()/3;
@@ -2134,6 +2135,7 @@ int Ut_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::Di
 	std::vector<double> src_coord = u_data->src_coord;
 	int rank;
 	MPI_Comm_rank(u_data->comm,&rank);
+	if(!rank) std::cout << "U* function" << std::endl;
 
 	// get the input data
 	elemental2tree(y,temp_c);
@@ -2165,28 +2167,35 @@ int U_func2(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::Di
 	InvMedTree<FMM_Mat_t>* temp = u_data->temp;
 	MPI_Comm comm               = u_data->comm;
 	pvfmm::PtFMM_Tree* pt_tree  = u_data->pt_tree;
+	int trg_coord_size          = u_data->trg_coord_size;
 
 	int rank;
 	MPI_Comm_rank(comm, &rank);
+
+	if(!rank) std::cout << "U function" << std::endl;
 
 	int n_local_pt_srcs = u_data->n_local_pt_srcs;
 	std::vector<double> coeffs(n_local_pt_srcs*2);
 	elemental2vec(x,coeffs);
 
-	std::vector<double> trg_coord = temp->ChebPoints();
+	//std::vector<double> trg_coord = temp->ChebPoints();
 
 
 	std::vector<double> trg_value;
-	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord.size()/3,&coeffs);
+	pt_tree->ClearFMMData();
+	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, trg_coord_size,&coeffs);
 
 	temp->Trg2Tree(trg_value);
 
 	// convert the tree into a vector. This vector represents the function
 	// that we passed into the tree constructor (which contains the current 
 	// random coefficients).
+	//temp->Write2File("../results/ufunc_b",8);
 	temp->Multiply(mask,1);
-	//temp->Write2File("../results/ufunc",0);
+	//temp->Write2File("../results/ufunc",8);
 	tree2elemental(temp,y);
+
+	MPI_Barrier(comm);
 
 	return 0;
 }
@@ -2246,11 +2255,12 @@ int B_func(
 	int R_d = Vt_G->Height();
 	int N_disc = W->Height();
 
-	//std::cout << "R_s: " << R_s << std::endl;
-	//std::cout << "R_d: " << R_d << std::endl;
-	//std::cout << "N_disc: " << N_disc << std::endl;
-
 	const El::Grid& g = x.Grid();
+	El::mpi::Comm elcomm = g.Comm();
+	MPI_Comm comm = elcomm.comm;
+	int rank;
+	MPI_Comm_rank(comm,&rank);
+	if(!rank) std::cout << "B function" << std::endl;
 
 	elemental2tree(x,temp_c);
 
@@ -2259,58 +2269,26 @@ int B_func(
 
 	for(int i=0;i<R_s;i++){
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
-		//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> xa(g);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Wx_i = El::View(Wx, 0, i, N_disc, 1);
 		elemental2tree(W_i,temp);
 		temp->Multiply(temp_c,1);
 		tree2elemental(temp,Wx_i);
-		//std::cout << x.Height() - W_i.Height() << std::endl;
-		//std::cout << x.Width() - W_i.Width() << std::endl;
-		//xa.AlignWith(W_i.DistData());
-		//xa = x;
-		//std::cout << "W_i C: " << W_i.ColAlign() << std::endl;
-		//std::cout << "x C: " << x.ColAlign() << std::endl;
-		//std::cout << "W_i R: " << W_i.RowAlign() << std::endl;
-		//std::cout << "x R: " << W_i.RowAlign() << std::endl;
-		//std::cout << x.Height() - W_i.Height() << std::endl;
-		//std::cout << x.Width() - W_i.Width() << std::endl;
-		//El::Hadamard(W_i,xa,Wx_i);
 	}
 
-	//std::cout << Wx.Width() << std::endl;
-	//std::cout << Wx.Height() << std::endl;
-	//std::cout << Vt_G->Width() << std::endl;
-	//std::cout << Vt_G->Height() << std::endl;
-
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
-
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
+	El::Complex<double> alpha = El::Complex<double>(1.0);
+	El::Complex<double> beta  = El::Complex<double>(0.0);
 
 
-	//El::Display(Wx,"Wx");
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VtWx(g);
 	El::Zeros(VtWx,R_d,R_s);
-	//MDM(Vt_G,Wx,temp,temp_c);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,*Vt_G,Wx,beta,VtWx);
-	//El::Copy(Vt_G,
 
-	//El::Display(VtWx,"VtWx");
-
-	//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> SVtWx(g);
-	//El::Zeros(SVtWx,R_d,R_s);
-	//El::Gemm(El::NORMAL,El::NORMAL,alpha,*S_G,VtWx,beta,SVtWx);
 	El::DiagonalScale(El::LEFT,El::NORMAL,*S_G,VtWx);
 
-	//El::Display(VtWx,"B mat");
 	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> SVtWx2(g);
 	SVtWx2 = VtWx;
 	SVtWx2.Resize(R_s*R_d,1);
 	VtWx = SVtWx2;
-	//El::Display(SVtWx,"B vec");
 	y = VtWx;
 
 	return 0;
@@ -2325,20 +2303,21 @@ int Bt_func(
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *Vt_G,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
-		InvMedTree<FMM_Mat_t>* temp_c
+		InvMedTree<FMM_Mat_t>* temp_c,
+		InvMedTree<FMM_Mat_t>* temp2
 		)
 {
 
 	const El::Grid& g = x.Grid();
 	El::mpi::Comm elcomm = g.Comm();
 	MPI_Comm comm = elcomm.comm;
-	El::Complex<double> alpha;
-	El::SetRealPart(alpha,1.0);
-	El::SetImagPart(alpha,0.0);
 
-	El::Complex<double> beta;
-	El::SetRealPart(beta,0.0);
-	El::SetImagPart(beta,0.0);
+	El::Complex<double> alpha = El::Complex<double>(1.0);
+	El::Complex<double> beta  = El::Complex<double>(0.0);
+
+	int rank;
+	MPI_Comm_rank(comm,&rank);
+	if(!rank) std::cout << "B* function" << std::endl;
 
 	int R_s = W->Width();
 	int R_d = Vt_G->Height();
@@ -2352,11 +2331,8 @@ int Bt_func(
 	x2.Resize(R_d,R_s);
 	x_copy = x2;
 
-	//El::Display(x,"Bt mat");
-
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Sx(g);
 	El::Zeros(Sx,R_d,R_s);
-	//El::Gemm(El::ADJOINT,El::NORMAL,alpha,*S_G,x_copy,beta,Sx);
 	El::DiagonalScale(El::LEFT,El::ADJOINT,*S_G,x_copy);
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx(g);
@@ -2364,28 +2340,28 @@ int Bt_func(
 	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*Vt_G,x_copy,beta,VSx);
 
 
+	/*
 	InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
 	t->bndry = temp->bndry;
 	t->kernel = temp->kernel;
 	t->fn = zero_fn;
 	t->f_max = 4;
 	t->CreateTree(false);
+	*/
+	temp2->Zero();
 
 
 	for(int i=0;i<R_s;i++){
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx_i = El::View(VSx, 0, i, N_disc, 1);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
-		//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> y_i(g);
-		//El::Zeros(y_i,N_disc,1);
 		elemental2tree(W_i,temp_c);
 		elemental2tree(VSx_i,temp);
 		temp->ConjMultiply(temp_c,1);
-		t->Add(temp,1);
-		//El::Hadamard(W_i,VSx_i,y_i);
+		temp2->Add(temp,1);
 	}
-	tree2elemental(t,y);
+	tree2elemental(temp2,y);
 
-	delete t;
+	//delete t;
 
 	return 0;
 }

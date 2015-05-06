@@ -63,7 +63,7 @@ message(STATUS ${pvfmm_INCLUDE_DIRS})
 
 set(LIBS ${LIBS} ${PETSC_LIBRARIES} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_DIRECTORIES})
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{TACC_IMPI_LIB} -std=c++11 -mkl -g -wd3218 -wd2570 -I/opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{TACC_IMPI_LIB} -std=c++11 -mkl -g -O1 -wd3218 -wd2570 -I/opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
 
 target_link_libraries(invmed ${LIBS})
 target_link_libraries(test ${LIBS})

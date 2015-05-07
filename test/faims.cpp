@@ -15,7 +15,7 @@
 #include <functional>
 #include "rsvd.hpp"
 
-#define VTK_ORDER 6
+#define VTK_ORDER 8
 
 // pt source locations
 //std::vector<double> pt_src_locs;
@@ -80,8 +80,8 @@ void MDM(El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &A,
 
 int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b, int k){
 	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel;
-	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	const pvfmm::Kernel<double>* kernel=&helm_kernel3;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj3;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 	//PetscErrorCode ierr;
 	int size, rank;
@@ -118,16 +118,6 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	if(!rank) std::cout << "Number of detectors generated=" << N_d << std::endl;
 
 	// also needs to be global...
-	/*
-	coeffs.clear();
-	coeffs.resize(N_s*data_dof);
-	{
-		#pragma omp parallel for
-		for(int i=0;i<N_s*data_dof;i++){
-			coeffs[i] = (i%2 == 0) ? 1 : 0 ;
-		}
-	}
-	*/
 
 	//////////////////////////////////////////////////////////////
 	// File name prefix
@@ -145,7 +135,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	temp->kernel = kernel;
 	//temp->fn = phi_0_fn;
 	temp->fn = one_fn;
-	temp->f_max = 4;
+	temp->f_max = 1;
 
 	InvMedTree<FMM_Mat_t> *temp2 = new InvMedTree<FMM_Mat_t>(comm);
 	temp2->bndry = bndry;
@@ -168,8 +158,8 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	InvMedTree<FMM_Mat_t> *eta = new InvMedTree<FMM_Mat_t>(comm);
 	eta->bndry = bndry;
 	eta->kernel = kernel;
-	eta->fn = eta_fn;
-	eta->f_max = .01;
+	eta->fn = eta_smooth_fn;
+	eta->f_max = 0.01;
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
@@ -260,9 +250,9 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_U(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_U(g);
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_U(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_U(g);
 
-	rsvd2(U_U,S_U,Vt_U,U_sf,Ut_sf,N_disc,N_s,R_s);
+	rsvd2(U_U,S_U,V_U,U_sf,Ut_sf,N_disc,N_s,R_s,20);
 
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U(g);
@@ -276,7 +266,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		// operator
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> USVt_U(g);
 		El::Zeros(USVt_U,N_disc,N_s);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,US_U,Vt_U,beta,USVt_U);
+		El::Gemm(El::NORMAL,El::ADJOINT,alpha,US_U,V_U,beta,USVt_U);
 		
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x(g);
 		El::Gaussian(x,N_s,1);
@@ -337,9 +327,9 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_G(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_G(g);
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_G(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G(g);
 
-	rsvd(U_G,S_G,Vt_G,G_sf,Gt_sf,N_d,N_disc,R_d);
+	rsvd(U_G,S_G,V_G,G_sf,Gt_sf,N_d,N_disc,R_d,10);
 
 	{ // Test that G is good
 		// Since G takes a function as an input we can not just randomly generate the Chebyshev coefficients gaussing random. 
@@ -365,7 +355,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> e(g);
 		El::Zeros(e,R_d,1);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,Vt_G,r,beta,e);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,e);
 
 		//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> f(g);
 		//El::Zeros(f,R_d,1);
@@ -389,6 +379,95 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 		delete t;
 
+		// see how well the projections of eta looks
+		//
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_Geta(g);
+		El::Zeros(Vt_Geta,R_d,1);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vt_Geta);
+
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VVt_Geta(g);
+		El::Zeros(VVt_Geta,N_disc,1);
+		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Geta,beta,VVt_Geta);
+
+
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,1,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,2,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,3,N_disc,1);
+
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l1 = El::View(V_G,0,R_d-1,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l2 = El::View(V_G,0,R_d-2,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l3 = El::View(V_G,0,R_d-3,N_disc,1);
+		elemental2tree(V_G_1,temp);
+		temp->Write2File("../results/v1",VTK_ORDER);
+		elemental2tree(V_G_2,temp);
+		temp->Write2File("../results/v2",VTK_ORDER);
+		elemental2tree(V_G_3,temp);
+		temp->Write2File("../results/v3",VTK_ORDER);
+		elemental2tree(V_G_l1,temp);
+		temp->Write2File("../results/vl1",VTK_ORDER);
+		elemental2tree(V_G_l2,temp);
+		temp->Write2File("../results/vl2",VTK_ORDER);
+		elemental2tree(V_G_l3,temp);
+		temp->Write2File("../results/vl3",VTK_ORDER);
+
+		elemental2tree(V_G_1,temp);
+		elemental2tree(V_G_2,temp2);
+		temp->ConjMultiply(temp2,1);
+		std::vector<double> integral = temp->Integrate();
+		if(!rank) std::cout << "v1" << integral[0] << std::endl;
+		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+
+		elemental2tree(V_G_1,temp);
+		elemental2tree(V_G_3,temp2);
+		temp->ConjMultiply(temp2,1);
+		integral = temp->Integrate();
+		if(!rank) std::cout << "v1" << integral[0] << std::endl;
+		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+
+		elemental2tree(V_G_1,temp);
+		elemental2tree(V_G_l1,temp2);
+		temp->ConjMultiply(temp2,1);
+		integral = temp->Integrate();
+		if(!rank) std::cout << "v1" << integral[0] << std::endl;
+		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+
+
+		
+		elemental2tree(VVt_Geta,temp);
+		temp->Write2File("../results/projection",VTK_ORDER);
+		temp->Add(eta,-1);
+		temp->Write2File("../results/proj_diff",VTK_ORDER);
+
+		El::Axpy(-1.0,EtaVec,VVt_Geta);
+		double coeff_relnorm = El::FrobeniusNorm(VVt_Geta)/El::FrobeniusNorm(EtaVec);
+		if(!rank) std::cout << "coeff_relnorm=" << coeff_relnorm << std::endl;
+
+
+		
+		double ls_error = temp->Norm2()/eta->Norm2();
+		if(!rank) std::cout << "||n - VV*n|| / ||n||=" << ls_error << std::endl;
+
+		elemental2tree(EtaVec,temp);
+		temp->Write2File("../results/eta_later",VTK_ORDER);
+
+		// test orthogonality
+		//
+		El::DistMatrix<El::Complex<double>,VR,STAR> I(g);
+		El::DistMatrix<El::Complex<double>,VR,STAR> UtU(g);
+		El::Zeros(UtU,R_d,R_d);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,U_G,U_G,beta,UtU);
+		El::Identity(I,R_d,R_d);
+		El::Axpy(-1.0,I,UtU);
+		double ortho_diff = FrobeniusNorm(UtU)/FrobeniusNorm(I);
+		if(!rank) std::cout << "Ortho diff: " << ortho_diff << std::endl;
+
+		El::DistMatrix<El::Complex<double>,VR,STAR> VtV(g);
+		El::Zeros(VtV,R_d,R_d);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,V_G,beta,VtV);
+		El::Axpy(-1.0,I,VtV);
+		ortho_diff = El::FrobeniusNorm(VtV)/El::FrobeniusNorm(I);
+		if(!rank) std::cout << "Ortho diff: " << ortho_diff << std::endl;
+
 	}
 
 	/////////////////////////////////////////////////////////////////
@@ -405,14 +484,14 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	// Compute the SVD of S_G Vt_G DW
 	/////////////////////////////////////////////////////////////////
 	//
-	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp_c);
-	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp_c,temp2);
+	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&V_G,&US_U,temp,temp_c);
+	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&V_G,&US_U,temp,temp_c,temp2);
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_B(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_B(g);
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_B(g);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_B(g);
 
-	rsvd(U_B,S_B,Vt_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_b);
+	rsvd(U_B,S_B,V_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_b,20);
 
 
 	/////////////////////////////////////////////////////////////////
@@ -444,12 +523,11 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> G_eps(g);
 		El::Zeros(G_eps,R_d*R_s,N_disc);
-		//El::Gemm(El::NORMAL,El::NORMAL,alpha,S_G,Vt_G,beta,G_eps);
+
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> G_eps_part(g);
-		//El::Zeros(G_eps_part,R_b,R_d*R_s);
-		//El::Gemm(El::NORMAL,El::NORMAL,alpha,U_B,S_B,beta,G_eps_part);
+
 		El::DiagonalScale(El::RIGHT, El::NORMAL,S_B,U_B);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,U_B,Vt_B,beta,G_eps);
+		El::Gemm(El::NORMAL,El::ADJOINT,alpha,U_B,V_B,beta,G_eps);
 
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> r(g);
 		El::Gaussian(r,N_disc,1);
@@ -480,9 +558,21 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Axpy(-1.0,c,a);
 		
 		double rnorm = El::TwoNorm(a)/El::TwoNorm(c);
-		if(!rank) std::cout << "G_eps rel norm: " << rnorm << std::endl;
+		if(!rank) std::cout << "M rel norm: " << rnorm << std::endl;
 
 		delete t;
+		
+		// test how the projection of eta compares to the exact
+		//
+		El::Zeros(a,R_d*R_s,1);
+		El::Gemm(El::NORMAL,El::NORMAL,alpha,G_eps,EtaVec,beta,a);
+
+		El::Zeros(c,N_d,1);
+		B_sf(EtaVec,c);
+		El::Axpy(-1.0,c,a);
+		
+		rnorm = El::TwoNorm(a)/El::TwoNorm(c);
+		if(!rank) std::cout << "M rel norm on n: " << rnorm << std::endl;
 
 	}
 
@@ -504,7 +594,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 
 	// Truncated SVD
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_B_k = El::View(Vt_B,0,0,k,N_disc);
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_B_k = El::View(V_B,0,0,N_disc,k);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_B_k = El::View(U_B,0,0,R_d*R_s,k);
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> C(g);
@@ -532,7 +622,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 	//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> D(g);
 	//El::Zeros(D,,1);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,Vt_B_k,C,beta,Eta_recon);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,V_B_k,C,beta,Eta_recon);
 
 	//El::Gemm(El::NORMAL,El::NORMAL,alpha,V_sol_k,D,beta,Eta_recon);
 	//if(!rank){
@@ -553,9 +643,9 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	double eta_norm = eta->Norm2();
 	double diff_norm = temp->Norm2();
 	double relerr = diff_norm/eta_norm;
-	if(!rank) std::cout << "||\\eta||=" << eta_norm << std::endl;
-	if(!rank) std::cout << "||\\eta - \\eta_recon||=" << diff_norm << std::endl;
-	if(!rank) std::cout << "||\\eta - \\eta_recon||/||\\eta||=" << relerr << std::endl;
+	if(!rank) std::cout << "||n||=" << eta_norm << std::endl;
+	if(!rank) std::cout << "||n - n_recon||=" << diff_norm << std::endl;
+	if(!rank) std::cout << "||n - n_recon||/||n||=" << relerr << std::endl;
 
 	delete temp;
 	delete temp2;
@@ -654,8 +744,8 @@ int main(int argc, char* argv[]){
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 	typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-  const pvfmm::Kernel<double>* kernel=&helm_kernel;
-  const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+  //const pvfmm::Kernel<double>* kernel=&helm_kernel;
+  //const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 
   pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 

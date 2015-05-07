@@ -113,6 +113,15 @@ PetscErrorCode  MatSetColumnVector(Mat A,Vec yy,PetscInt col);
 void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr, double k);
 void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
 void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+
+
+void helm_kernel3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+void helm_kernel_conj3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+
+
+
+
+
 void nonsingular_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
 
 std::vector<double> randsph(int n_points, double rad);
@@ -122,6 +131,8 @@ std::vector<double> equiplane(int n_points, int plane, double pos);
 
 const pvfmm::Kernel<double> helm_kernel=pvfmm::BuildKernel<double, helm_kernel_fn>("helm_kernel", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_kernel_conj_fn>("helm_kernel_conj", 3, std::pair<int,int>(2,2));
+const pvfmm::Kernel<double> helm_kernel3=pvfmm::BuildKernel<double, helm_kernel3_fn>("helm_kernel3", 3, std::pair<int,int>(2,2));
+const pvfmm::Kernel<double> helm_kernel_conj3=pvfmm::BuildKernel<double, helm_kernel_conj3_fn>("helm_kernel_conj3", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> nonsingular_kernel=pvfmm::BuildKernel<double, nonsingular_kernel_fn>("nonsingular_kernel", 3, std::pair<int,int>(2,2));
 
 std::vector<double> test_pts();
@@ -163,6 +174,15 @@ void helm_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, double* 
 
 void helm_kernel_conj_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
 	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -1);
+};
+
+
+void helm_kernel3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, 3);
+};
+
+void helm_kernel_conj3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -3);
 };
 
 
@@ -741,8 +761,8 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 
 #undef __FUNCT__
 #define __FUNCT__ "elemental2tree"
-template <class FMM_Mat_t, typename El_Complex_Mat_t>
-int elemental2tree(El_Complex_Mat_t &Y, InvMedTree<FMM_Mat_t> *tree){
+template <class FMM_Mat_t, typename T>
+int elemental2tree(const El::DistMatrix<T,El::VR,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
 	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
@@ -901,8 +921,8 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 
 #undef __FUNCT__
 #define __FUNCT__ "tree2elemental"
-template <class FMM_Mat_t, typename El_Complex_Mat_t>
-int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El_Complex_Mat_t &Y){
+template <class FMM_Mat_t, typename T>
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VR,El::STAR> &Y){
 
 	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
@@ -2245,14 +2265,14 @@ int B_func(
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *Vt_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *V_G,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c
 		)
 {
 	int R_s = W->Width();
-	int R_d = Vt_G->Height();
+	int R_d = V_G->Width();
 	int N_disc = W->Height();
 
 	const El::Grid& g = x.Grid();
@@ -2281,7 +2301,7 @@ int B_func(
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VtWx(g);
 	El::Zeros(VtWx,R_d,R_s);
-	El::Gemm(El::NORMAL,El::NORMAL,alpha,*Vt_G,Wx,beta,VtWx);
+	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*V_G,Wx,beta,VtWx);
 
 	El::DiagonalScale(El::LEFT,El::NORMAL,*S_G,VtWx);
 
@@ -2300,7 +2320,7 @@ int Bt_func(
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *Vt_G,
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *V_G,
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c,
@@ -2320,7 +2340,7 @@ int Bt_func(
 	if(!rank) std::cout << "B* function" << std::endl;
 
 	int R_s = W->Width();
-	int R_d = Vt_G->Height();
+	int R_d = V_G->Width();
 	int N_disc = W->Height();
 
 	//El::Display(x,"Bt vec");
@@ -2337,7 +2357,7 @@ int Bt_func(
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx(g);
 	El::Zeros(VSx,N_disc,R_s);
-	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*Vt_G,x_copy,beta,VSx);
+	El::Gemm(El::NORMAL,El::NORMAL,alpha,*V_G,x_copy,beta,VSx);
 
 
 	/*

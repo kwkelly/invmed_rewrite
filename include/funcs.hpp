@@ -30,6 +30,8 @@ void cs_fn(const double* coord, int n, double* out);
 
 void sc_fn(const double* coord, int n, double* out);
 
+void sc_osc_fn(const double* coord, int n, double* out);
+
 void scc_fn(const double* coord, int n, double* out);
 
 void sc2_fn(const double* coord, int n, double* out);
@@ -69,5 +71,11 @@ void eta2_fn(const  double* coord, int n, double* out);
 void two_pt_sol_fn(const double* coord, int n, double* out);
 
 void eight_pt_sol_fn(const double* coord, int n, double* out);
+
+void cos2pix_fn(const  double* coord, int n, double* out);
+
+void sin2pix_fn(const  double* coord, int n, double* out);
+
+void sc_osc_fn(const double* coord, int n, double* out)'
 
 #endif

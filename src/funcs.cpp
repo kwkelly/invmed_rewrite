@@ -21,7 +21,7 @@ void eta_fn(const  double* coord, int n, double* out){
 	}
 }
 
-// 0 outside of a sphere of radius 0.1, 0.01 inside that.
+// smooth exponential
 void eta_smooth_fn(const  double* coord, int n, double* out){
 	double eta_ = 1;
 	int dof=2;
@@ -30,12 +30,39 @@ void eta_smooth_fn(const  double* coord, int n, double* out){
 		const double* c=&coord[i*COORD_DIM];
 		{
 			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
-			r_2 = sqrt(r_2);
-			out[i*dof]= (r_2<0.1 ? exp(-1/(.1-r_2)) : 0.0);
+			double r_8 = r_2*r_2*r_2*r_2*12*12*12*12*12*12*12*12;
+			out[i*dof]= 0.01*exp(-r_8);
 			out[i*dof+1] = 0; //complex part
 		}
 	}
 }
+
+// cos2 pi x
+void cos2pix_fn(const  double* coord, int n, double* out){
+	int dof=2;
+	int COORD_DIM = 3;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof]= sin(2*M_PI*c[0]);
+			out[i*dof+1] = 0; //complex part
+		}
+	}
+}
+
+// sin2 pi x
+void sin2pix_fn(const  double* coord, int n, double* out){
+	int dof=2;
+	int COORD_DIM = 3;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			out[i*dof]= cos(2*M_PI*c[0]);
+			out[i*dof+1] = 0; //complex part
+		}
+	}
+}
+
 
 
 
@@ -272,6 +299,24 @@ void sc_fn(const double* coord, int n, double* out){
 			// Assumes that k = 1;
 			if(dof>1) out[i*dof+0]= sin(r);
 			if(dof>1) out[i*dof+1]= cos(r);
+		}
+	}
+
+}
+
+
+// sin + icos
+void sc_osc_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+	int dof=2;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
+			// Assumes that k = 1;
+			if(dof>1) out[i*dof+0]= sin(10*r);
+			if(dof>1) out[i*dof+1]= cos(10*r);
 		}
 	}
 

@@ -55,7 +55,7 @@ int el_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> *temp = new InvMedTree<FMM_Mat_t>(comm);
 	temp->bndry = bndry;
 	temp->kernel = kernel;
-	temp->fn = sc_fn;
+	temp->fn = sc_osc_fn;
 	temp->f_max = 1;
 
 	InvMedTree<FMM_Mat_t> *temp1 = new InvMedTree<FMM_Mat_t>(comm);
@@ -1185,6 +1185,66 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 
 }
 
+int orthogonality_test(MPI_Comm &comm){
+
+	int rank, size;
+	MPI_Comm_size(comm,&size);
+	MPI_Comm_rank(comm,&rank);
+	El::Grid g(comm,size);
+
+	// Set up some trees
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
+	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
+	PetscErrorCode ierr;
+
+
+	InvMedTree<FMM_Mat_t> *s = new InvMedTree<FMM_Mat_t>(comm);
+	s->bndry = bndry;
+	s->kernel = kernel;
+	s->fn = sin2pix_fn;
+	s->f_max = 1;
+
+	InvMedTree<FMM_Mat_t> *c = new InvMedTree<FMM_Mat_t>(comm);
+	c->bndry = bndry;
+	c->kernel = kernel;
+	c->fn = cos2pix_fn;
+	c->f_max = 1;
+
+	// initialize the trees
+	InvMedTree<FMM_Mat_t>::SetupInvMed();
+
+	int m = s->m;
+	int M = s->M;
+	int n = s->n;
+	int N = s->N;
+
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> sv(g);
+	El::Zeros(sv,M/2,1);
+	tree2elemental(s,sv);
+
+	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> cv(g);
+	El::Zeros(cv,M/2,1);
+	tree2elemental(c,cv);
+
+	s->ConjMultiply(c,1);
+
+	std::vector<double> vec = s->Integrate();
+
+	std::string name = __func__;
+	test_less(1e-6,fabs(vec[0]),name,comm);
+	test_less(1e-6,fabs(vec[1]),name,comm);
+
+
+	El::Complex<double> cts = El::Dot(cv,sv);
+
+	std::cout << "cts: " << cts << std::endl;
+
+	return 0;
+
+}
+
+
 int BfuncBtfunc_test(MPI_Comm &comm){
 
 	int rank, size;
@@ -1251,8 +1311,8 @@ int BfuncBtfunc_test(MPI_Comm &comm){
 		temp->FilterChebTree(fvec);
 		tree2elemental(temp,W_i);
 	}
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_G(g);
-	El::Adjoint(V_G,Vt_G);
+	//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vt_G(g);
+	//El::Adjoint(V_G,Vt_G);
 
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U(g);
@@ -1282,8 +1342,8 @@ int BfuncBtfunc_test(MPI_Comm &comm){
 	El::Zeros(Bx,R_s*R_d,1);
 
 	using namespace std::placeholders;
-	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp1);
-	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&Vt_G,&US_U,temp,temp1,temp2);
+	auto B_sf  = std::bind(B_func,_1,_2,&S_G,&V_G,&US_U,temp,temp1);
+	auto Bt_sf = std::bind(Bt_func,_1,_2,&S_G,&V_G,&US_U,temp,temp1,temp2);
 
 	B_sf(x,Bx);
 
@@ -1414,16 +1474,17 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
+	orthogonality_test(comm);
 	//el_test(comm);
 	//el_test2(comm);
-	Zero_test(comm);
+	//Zero_test(comm);
 	//Ufunc2Utfunc_test(comm);
 	//Ufunc2_test(comm);
 	//Utfunc_test(comm);
 	//Ufunc_test(comm);
 	//UfuncUtfunc_test(comm);
 	//UfuncUtfunc_test(comm);
-	BfuncBtfunc_test(comm);
+	//BfuncBtfunc_test(comm);
 	//Gtfunc_test(comm);
 	//Gfunc_test(comm);
 	//GfuncGtfunc_test(comm);

@@ -390,9 +390,9 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Geta,beta,VVt_Geta);
 
 
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,1,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,2,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,3,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,0,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,1,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,2,N_disc,1);
 
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l1 = El::View(V_G,0,R_d-1,N_disc,1);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l2 = El::View(V_G,0,R_d-2,N_disc,1);
@@ -467,6 +467,40 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Axpy(-1.0,I,VtV);
 		ortho_diff = El::FrobeniusNorm(VtV)/El::FrobeniusNorm(I);
 		if(!rank) std::cout << "Ortho diff: " << ortho_diff << std::endl;
+
+		// test some spectrum stuff
+		El::Display(S_G,"Sigma_G");
+
+
+		double sig_1 = El::RealPart(S_G.Get(1,1));
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Geta(g);
+		El::Zeros(Geta,R_d,1);
+		G_sf(EtaVec,Geta);
+
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Vteta(g);
+		El::Zeros(Vteta,R_d,1);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vteta);
+		double g_eta_norm = El::TwoNorm(Geta);
+		double Vteta_norm = El::TwoNorm(Vteta);
+		if(!rank) std::cout << "||Gn||=" << g_eta_norm << std::endl;
+		if(!rank) std::cout << "s_1 * ||Vtn||=" << sig_1*Vteta_norm << std::endl;
+
+		// another one
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gv1(g);
+		El::Zeros(Gv1,R_d,1);
+		G_sf(V_G_1,Gv1);
+
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_G_1 = El::View(U_G,0,0,R_d,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> temp_vec(g);
+		El::Zeros(temp_vec,R_d,1);
+		El::Axpy(sig_1,U_G_1,temp_vec);
+		El::Axpy(-1.0,Gv1,temp_vec);
+		double norm_diff1 = El::TwoNorm(temp_vec);
+
+		if(!rank) std::cout << "||Gv_1 - s_1 u_1||=" << norm_diff1 << std::endl;
+		//if(!rank) std::cout << "s_1 * ||Vt\eta||=" << sig_1*Vteta_norm << std::endl;
+
+		
 
 	}
 

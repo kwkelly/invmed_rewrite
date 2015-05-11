@@ -3,7 +3,7 @@
 #include "petscsys.h"
 #include "El.hpp"
 #include "par_scan/gen_scan.hpp"
-#include "math_utils.hpp"
+//#include "math_utils.hpp"
 
 #pragma once
 
@@ -156,7 +156,7 @@ void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, doub
 				if (R!=0){
 					R = sqrt(R);
 					double invR=1.0/R;
-					invR = invR/(4*pvfmm::const_pi<double>());
+					invR = invR/(4*M_PI);
 					double G[2]={cos(k*R)*invR, sin(k*R)*invR};
 					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
 					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
@@ -201,7 +201,7 @@ void nonsingular_kernel_fn(double* r_src, int src_cnt, double* v_src, int dof, d
 				if (R!=0){
 					R = sqrt(R);
 					double invR=1.0/R;
-					invR = invR/(4*pvfmm::const_pi<double>());
+					invR = invR/(4*M_PI);
 					double G[2]={cos(R), sin(R)};
 					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
 					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
@@ -764,7 +764,7 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 template <class FMM_Mat_t, typename T>
 int elemental2tree(const El::DistMatrix<T,El::VR,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
-	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
+	//assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
@@ -924,7 +924,7 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 template <class FMM_Mat_t, typename T>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VR,El::STAR> &Y){
 
-	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
+	//assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
 
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;

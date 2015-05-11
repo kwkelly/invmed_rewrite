@@ -252,7 +252,21 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_U(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_U(g);
 
-	rsvd2(U_U,S_U,V_U,U_sf,Ut_sf,N_disc,N_s,R_s,20);
+
+	rsvd::RSVDCtrl ctrl_U;
+	ctrl_U.m=N_disc;
+	ctrl_U.n=N_s;
+	ctrl_U.r=20;
+	ctrl_U.l=30;
+	ctrl_U.q=0;
+	ctrl_U.tol=0.001;
+	ctrl_U.adap=rsvd::ADAP;
+	ctrl_U.orientation=rsvd::NORMAL;
+	rsvd::rsvd(U_U,S_U,V_U,U_sf,Ut_sf,ctrl_U);
+	R_s = ctrl_U.r;
+	if(!rank) std::cout << "R_s = " << R_s << std::endl;
+
+//	rsvd2(U_U,S_U,V_U,U_sf,Ut_sf,N_disc,N_s,R_s,20);
 
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U(g);
@@ -329,7 +343,19 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_G(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G(g);
 
-	rsvd(U_G,S_G,V_G,G_sf,Gt_sf,N_d,N_disc,R_d,10);
+	rsvd::RSVDCtrl ctrl_G;
+	ctrl_G.m=N_d;
+	ctrl_G.n=N_disc;
+	ctrl_G.r=20;
+	ctrl_G.l=30;
+	ctrl_G.q=0;
+	ctrl_G.tol=0.001;
+	ctrl_G.adap=rsvd::ADAP;
+	ctrl_G.orientation=rsvd::ADJOINT;
+	rsvd::rsvd(U_U,S_U,V_U,U_sf,Ut_sf,ctrl_G);
+	R_d = ctrl_G.r;
+	if(!rank) std::cout << "R_d = " << R_d << std::endl;
+	//rsvd(U_G,S_G,V_G,G_sf,Gt_sf,N_d,N_disc,R_d,10);
 
 	{ // Test that G is good
 		// Since G takes a function as an input we can not just randomly generate the Chebyshev coefficients gaussing random. 
@@ -390,9 +416,9 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Geta,beta,VVt_Geta);
 
 
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,1,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,2,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,3,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,0,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,1,N_disc,1);
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,2,N_disc,1);
 
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l1 = El::View(V_G,0,R_d-1,N_disc,1);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l2 = El::View(V_G,0,R_d-2,N_disc,1);
@@ -491,7 +517,20 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR>	S_B(g);
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_B(g);
 
-	rsvd(U_B,S_B,V_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_b,20);
+	//rsvd(U_B,S_B,V_B,B_sf,Bt_sf,R_s*R_d,N_disc,R_b,20);
+
+	rsvd::RSVDCtrl ctrl_B;
+	ctrl_B.m=R_s*R_d;
+	ctrl_B.n=N_disc;
+	ctrl_B.r=20;
+	ctrl_B.l=30;
+	ctrl_B.q=0;
+	ctrl_B.tol=0.001;
+	ctrl_B.adap=rsvd::ADAP;
+	ctrl_B.orientation=rsvd::NORMAL;
+	rsvd::rsvd(U_B,S_B,V_B,B_sf,Bt_sf,ctrl_B);
+	R_b = ctrl_B.r;
+	if(!rank) std::cout << "R_b = " << R_b << std::endl;
 
 
 	/////////////////////////////////////////////////////////////////

@@ -76,6 +76,6 @@ void cos2pix_fn(const  double* coord, int n, double* out);
 
 void sin2pix_fn(const  double* coord, int n, double* out);
 
-void sc_osc_fn(const double* coord, int n, double* out)'
+void sc_osc_fn(const double* coord, int n, double* out);
 
 #endif

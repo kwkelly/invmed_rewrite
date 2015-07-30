@@ -1200,6 +1200,7 @@ void InvMedTree<FMM_Mat_t>::FilterChebTree(std::vector<double>& coeff_scaling){
 
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::Zero(){
+/*
 	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 
 	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
@@ -1209,6 +1210,26 @@ void InvMedTree<FMM_Mat_t>::Zero(){
   int n_coeff=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
   int data_dim=nlist[0]->ChebData().Dim()/n_coeff;
   assert(data_dim*n_coeff==nlist[0]->ChebData().Dim());
+
+
+  int omp_p=omp_get_max_threads();
+	#pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist.size()* tid   )/omp_p;
+		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+
+		for(size_t i=i_start;i<i_end;i++){
+			pvfmm::Vector<double>& coeff_vec =nlist[i]->ChebData();
+			for(size_t j=0;j<n_coeff*data_dof;j++){
+				coeff_vec[j] = 0;
+			}
+			nlist[i]->DataDOF()=data_dof;
+		}
+	}
+
+
+
+
 
   #pragma omp parallel for
   for(size_t i=0;i<nlist.size();i++){
@@ -1222,4 +1243,71 @@ void InvMedTree<FMM_Mat_t>::Zero(){
       idx++;
     }
   }
+*/
+
+	//  may need to change this
+	int SCAL_EXP = 1;
+
+	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
+	const MPI_Comm* comm=this->Comm();
+	int omp_p=omp_get_max_threads();
+	//int omp_p = 1;
+	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
+	int data_dof=InvMedTree<FMM_Mat_t>::data_dof;
+	size_t n_nodes3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1);
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+1)*(cheb_deg+1)/6;
+
+	std::vector<FMMNode_t*> nlist1 = this->GetNGLNodes();
+
+	std::vector<double> cheb_node_coord1=pvfmm::cheb_nodes<double>(cheb_deg, 1);
+	#pragma omp parallel for
+	for(size_t i=0;i<cheb_node_coord1.size();i++){
+		cheb_node_coord1[i]=cheb_node_coord1[i]*2.0-1.0;
+	}
+
+	double max = 0;
+
+	#pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist1.size()* tid   )/omp_p;
+		size_t i_end  =(nlist1.size()*(tid+1))/omp_p;
+		pvfmm::Vector<double> coeff_vec1(n_coeff3*data_dof);
+		pvfmm::Vector<double> val_vec1(n_nodes3*data_dof);
+
+		for(size_t i=i_start;i<i_end;i++){
+			double s=std::pow(2.0,COORD_DIM*nlist1[i]->Depth()*0.5*SCAL_EXP);
+			coeff_vec1 = nlist1[i]->ChebData();
+
+			// val_vec: Evaluate coeff_vec at Chebyshev node points
+			cheb_eval(coeff_vec1, cheb_deg, cheb_node_coord1, cheb_node_coord1, cheb_node_coord1, val_vec1);
+
+			for(size_t j1=0;j1<data_dof;j1++){
+				for(size_t j0=0;j0<n_nodes3;j0++){
+					val_vec1[j1*n_nodes3+j0] = 0;
+				}
+			}
+
+			{ // Compute Chebyshev approx
+				pvfmm::Vector<double>& coeff_vec=nlist1[i]->ChebData();
+				if(coeff_vec.Dim()!=(data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6){
+					coeff_vec.ReInit((data_dof*(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3))/6);
+				}
+				pvfmm::cheb_approx<double,double>(&val_vec1[0], cheb_deg, data_dof, &coeff_vec[0]);
+				nlist1[i]->DataDOF()=data_dof;
+			}
+		}
+	}
+
+	return;
+
 }
+
+
+
+
+
+
+
+
+
+

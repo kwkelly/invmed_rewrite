@@ -80,13 +80,15 @@ void MDM(El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &A,
 
 int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b, int k){
 	// Set up some trees
-	const pvfmm::Kernel<double>* kernel=&helm_kernel3;
-	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj3;
+	const pvfmm::Kernel<double>* kernel=&helm_kernel;
+	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 	//PetscErrorCode ierr;
 	int size, rank;
 	MPI_Comm_size(comm, &size);
 	MPI_Comm_rank(comm, &rank);
+
+	double rsvd_tol = 0.0001;
 
 	int data_dof = 2;
 
@@ -201,8 +203,8 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	int N_disc = N/2;
 
 	// Set the scalars for multiplying in Gemm
-	auto alpha = make_one<El::Complex<double>>();
-	auto beta = make_zero<El::Complex<double>>();
+	auto alpha = El::Complex<double>(1.0);
+	auto beta = El::Complex<double>(0.0);
 
 	G_data g_data;
 	g_data.temp = temp;
@@ -256,10 +258,11 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	rsvd::RSVDCtrl ctrl_U;
 	ctrl_U.m=N_disc;
 	ctrl_U.n=N_s;
-	ctrl_U.r=20;
-	ctrl_U.l=30;
+	ctrl_U.r=R_s;
+	ctrl_U.l=10;
 	ctrl_U.q=0;
-	ctrl_U.tol=0.001;
+	ctrl_U.tol=rsvd_tol;
+	ctrl_U.max_sz=N_s;
 	ctrl_U.adap=rsvd::ADAP;
 	ctrl_U.orientation=rsvd::NORMAL;
 	rsvd::rsvd(U_U,S_U,V_U,U_sf,Ut_sf,ctrl_U);
@@ -314,7 +317,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Phi(g);
 	El::Zeros(Phi,N_d,R_s);
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U_i = El::View(US_U, 0, i, N_disc, 1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> US_U_i = El::LockedView(US_U, 0, i, N_disc, 1);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Phi_i = El::View(Phi, 0, i, N_d, 1);
 		elemental2tree(US_U_i,temp);
 
@@ -346,13 +349,14 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	rsvd::RSVDCtrl ctrl_G;
 	ctrl_G.m=N_d;
 	ctrl_G.n=N_disc;
-	ctrl_G.r=20;
-	ctrl_G.l=30;
+	ctrl_G.r=R_d;
+	ctrl_G.l=10;
 	ctrl_G.q=0;
-	ctrl_G.tol=0.001;
+	ctrl_G.tol=rsvd_tol;
+	ctrl_G.max_sz=N_d;
 	ctrl_G.adap=rsvd::ADAP;
 	ctrl_G.orientation=rsvd::ADJOINT;
-	rsvd::rsvd(U_U,S_U,V_U,U_sf,Ut_sf,ctrl_G);
+	rsvd::rsvd(U_G,S_G,V_G,G_sf,Gt_sf,ctrl_G);
 	R_d = ctrl_G.r;
 	if(!rank) std::cout << "R_d = " << R_d << std::endl;
 	//rsvd(U_G,S_G,V_G,G_sf,Gt_sf,N_d,N_disc,R_d,10);
@@ -366,7 +370,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		//elemental2tree(r,temp);
 		//std::vector<double> filt = {1,1};
 		//temp->FilterChebTree(filt);
-		tree2elemental(temp,r);
+		//tree2elemental(temp,r);
 
 		InvMedTree<FMM_Mat_t>* t = new InvMedTree<FMM_Mat_t>(comm);
 		t->bndry = bndry;
@@ -416,13 +420,13 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Geta,beta,VVt_Geta);
 
 
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::View(V_G,0,0,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::View(V_G,0,1,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::View(V_G,0,2,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_1 = El::LockedView(V_G,0,0,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_2 = El::LockedView(V_G,0,1,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_3 = El::LockedView(V_G,0,2,N_disc,1);
 
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l1 = El::View(V_G,0,R_d-1,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l2 = El::View(V_G,0,R_d-2,N_disc,1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l3 = El::View(V_G,0,R_d-3,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l1 = El::LockedView(V_G,0,R_d-1,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l2 = El::LockedView(V_G,0,R_d-2,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_l3 = El::LockedView(V_G,0,R_d-3,N_disc,1);
 		elemental2tree(V_G_1,temp);
 		temp->Write2File("../results/v1",VTK_ORDER);
 		elemental2tree(V_G_2,temp);
@@ -498,7 +502,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Display(S_G,"Sigma_G");
 
 
-		double sig_1 = El::RealPart(S_G.Get(1,1));
+		double sig_1 = El::RealPart(S_G.Get(0,0));
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Geta(g);
 		El::Zeros(Geta,R_d,1);
 		G_sf(EtaVec,Geta);
@@ -508,7 +512,8 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vteta);
 		double g_eta_norm = El::TwoNorm(Geta);
 		double Vteta_norm = El::TwoNorm(Vteta);
-		if(!rank) std::cout << "||Gn||=" << g_eta_norm << std::endl;
+		double eta_norm = eta->Norm2();
+		if(!rank) std::cout << "||Gn||/||n||=" << g_eta_norm/eta_norm << std::endl;
 		if(!rank) std::cout << "s_1 * ||Vtn||=" << sig_1*Vteta_norm << std::endl;
 
 		// another one
@@ -516,7 +521,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		El::Zeros(Gv1,R_d,1);
 		G_sf(V_G_1,Gv1);
 
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_G_1 = El::View(U_G,0,0,R_d,1);
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_G_1 = El::LockedView(U_G,0,0,R_d,1);
 		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> temp_vec(g);
 		El::Zeros(temp_vec,R_d,1);
 		El::Axpy(sig_1,U_G_1,temp_vec);
@@ -526,6 +531,20 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 		if(!rank) std::cout << "||Gv_1 - s_1 u_1||=" << norm_diff1 << std::endl;
 		//if(!rank) std::cout << "s_1 * ||Vt\eta||=" << sig_1*Vteta_norm << std::endl;
 
+		// one more
+		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Gtu1(g);
+		El::Zeros(Gtu1,N_disc,1);
+		Gt_sf(U_G_1,Gtu1);
+
+		const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_G_0 = El::LockedView(V_G,0,0,N_disc,1);
+		elemental2tree(Gtu1,temp);
+		temp->Write2File("../results/Gtu1",VTK_ORDER);
+		El::Zeros(temp_vec,N_disc,1);
+		El::Axpy(sig_1,V_G_0,temp_vec);
+		El::Axpy(-1.0,Gtu1,temp_vec);
+		double norm_diff2 = El::TwoNorm(temp_vec);
+
+		if(!rank) std::cout << "||Gtu_1 - s_1 v_1||=" << norm_diff2 << std::endl;
 		
 
 	}
@@ -556,10 +575,11 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	rsvd::RSVDCtrl ctrl_B;
 	ctrl_B.m=R_s*R_d;
 	ctrl_B.n=N_disc;
-	ctrl_B.r=20;
-	ctrl_B.l=30;
+	ctrl_B.r=R_b;
+	ctrl_B.l=10;
 	ctrl_B.q=0;
-	ctrl_B.tol=0.001;
+	ctrl_B.tol=rsvd_tol;
+	ctrl_B.max_sz=R_s*R_d;
 	ctrl_B.adap=rsvd::ADAP;
 	ctrl_B.orientation=rsvd::NORMAL;
 	rsvd::rsvd(U_B,S_B,V_B,B_sf,Bt_sf,ctrl_B);
@@ -667,8 +687,8 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 
 
 	// Truncated SVD
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_B_k = El::View(V_B,0,0,N_disc,k);
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_B_k = El::View(U_B,0,0,R_d*R_s,k);
+	const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> V_B_k = El::LockedView(V_B,0,0,N_disc,k);
+	const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> U_B_k = El::LockedView(U_B,0,0,R_d*R_s,k);
 
 	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> C(g);
 	El::Zeros(C,k,1);
@@ -686,7 +706,7 @@ int faims(MPI_Comm &comm, int N_d_sugg, int N_s_sugg, int R_d, int R_s, int R_b,
 	}
 	*/
 
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> S_B_k = El::View(S_B,0,0,k,1);
+	const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> S_B_k = El::LockedView(S_B,0,0,k,1);
 	El::Display(S_B_k,"Truncated Diagonal");
 	//El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Sig_k(g);
 	//El::Diagonal(Sig_k,s_sol_k_inv);

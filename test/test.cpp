@@ -1707,7 +1707,6 @@ int randqr_test2(MPI_Comm &comm){
 	return 0;
 
 }
-/*
 
 int factorize_G_test(MPI_Comm &comm){
 
@@ -1841,6 +1840,7 @@ int factorize_G_test(MPI_Comm &comm){
 	return 0;
 
 }
+
 int GGt_test(MPI_Comm &comm){
 
 	// Set up some trees
@@ -2007,8 +2007,7 @@ int GGt_test(MPI_Comm &comm){
 	return 0;
 
 }
-*/
-/*
+
 int UUt_test(MPI_Comm &comm){
 
 	// Set up some trees
@@ -2183,7 +2182,6 @@ int UUt_test(MPI_Comm &comm){
 	return 0;
 }
 
-*/
 
 #undef __FUNCT__
 #define __FUNCT__ "comp_inc_test"
@@ -2627,30 +2625,30 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
-	//norm_test(comm);
-	//add_test(comm);
-	//multiply_test(comm);
-	//multiply_test2(comm);
-	//multiply_test3(comm);
-	//conj_multiply_test(comm);
-	//conj_multiply_test2(comm);
+	norm_test(comm);
+	add_test(comm);
+	multiply_test(comm);
+	multiply_test2(comm);
+	multiply_test3(comm);
+	conj_multiply_test(comm);
+	conj_multiply_test2(comm);
 	//copy_test(comm);
 	int_test(comm);
-	//int_test2(comm);
-	//int_test3(comm);
-	//tree_vec_test(comm);
-	//ptfmm_trg2tree_test(comm);
-	//ptfmm_trg2tree_test2(comm);
+	int_test2(comm);
+	int_test3(comm);
+	tree_vec_test(comm);
+	ptfmm_trg2tree_test(comm);
+	ptfmm_trg2tree_test2(comm);
 	ptfmm_trg2tree_test3(comm);
 	//mult_op_test(comm);
 	//spectrum_test(comm);
 //	mgs_test(comm);
 //  compress_incident_test(comm);
-	//factorize_G_test(comm);
+	factorize_G_test(comm);
 	//randqr_test1(comm);
 	//randqr_test2(comm);
-//	GGt_test(comm);
-//	UUt_test(comm);
+	GGt_test(comm);
+	UUt_test(comm);
   //comp_inc_test(comm);
 	//filter_test(comm);
 	El::Finalize();

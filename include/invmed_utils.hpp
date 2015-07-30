@@ -119,6 +119,9 @@ void helm_kernel3_fn(double* r_src, int src_cnt, double* v_src, int dof, double*
 void helm_kernel_conj3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
 
 
+void helm_kernel_low_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+void helm_kernel_conj_low_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr);
+
 
 
 
@@ -134,6 +137,9 @@ const pvfmm::Kernel<double> helm_kernel_conj=pvfmm::BuildKernel<double, helm_ker
 const pvfmm::Kernel<double> helm_kernel3=pvfmm::BuildKernel<double, helm_kernel3_fn>("helm_kernel3", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> helm_kernel_conj3=pvfmm::BuildKernel<double, helm_kernel_conj3_fn>("helm_kernel_conj3", 3, std::pair<int,int>(2,2));
 const pvfmm::Kernel<double> nonsingular_kernel=pvfmm::BuildKernel<double, nonsingular_kernel_fn>("nonsingular_kernel", 3, std::pair<int,int>(2,2));
+
+const pvfmm::Kernel<double> helm_kernel_low=pvfmm::BuildKernel<double, helm_kernel_low_fn>("helm_kernel_low", 3, std::pair<int,int>(2,2));
+const pvfmm::Kernel<double> helm_kernel_conj_low=pvfmm::BuildKernel<double, helm_kernel_conj_low_fn>("helm_kernel_conj_low", 3, std::pair<int,int>(2,2));
 
 std::vector<double> test_pts();
 
@@ -156,7 +162,7 @@ void helm_kernel_fn_var(double* r_src, int src_cnt, double* v_src, int dof, doub
 				if (R!=0){
 					R = sqrt(R);
 					double invR=1.0/R;
-					invR = invR/(4*M_PI);
+					invR = invR/(4*pvfmm::const_pi<double>());
 					double G[2]={cos(k*R)*invR, sin(k*R)*invR};
 					p[0] += v_src[(s*dof+i)*2+0]*G[0] - v_src[(s*dof+i)*2+1]*G[1];
 					p[1] += v_src[(s*dof+i)*2+0]*G[1] + v_src[(s*dof+i)*2+1]*G[0];
@@ -183,6 +189,15 @@ void helm_kernel3_fn(double* r_src, int src_cnt, double* v_src, int dof, double*
 
 void helm_kernel_conj3_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
 	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -3);
+};
+
+
+void helm_kernel_low_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, 0.1);
+};
+
+void helm_kernel_conj_low_fn(double* r_src, int src_cnt, double* v_src, int dof, double* r_trg, int trg_cnt, double* k_out, pvfmm::mem::MemoryManager* mem_mgr){
+	helm_kernel_fn_var(r_src, src_cnt, v_src, dof, r_trg, trg_cnt, k_out, mem_mgr, -0.1);
 };
 
 
@@ -759,12 +774,162 @@ int vec2tree(Vec& Y, InvMedTree<FMM_Mat_t> *tree){
 }
 
 
+template<typename T>
+std::ostream &operator<<(std::ostream &stream, std::vector<T> ob)
+{
+	for(int i=0;i<ob.size();i++){
+		stream << ob[i] << '\n';
+	}
+	return stream;
+}
+
+
+std::vector<int> exscan(std::vector<int> x){
+	int ll = x.size();
+	std::vector<int> y(ll);
+	y[0] = 0;
+
+	for(int i=1;i<ll;i++){
+		y[i] = y[i-1] + x[i-1];
+	}
+
+	return y;
+}
+
+
+/*
 #undef __FUNCT__
 #define __FUNCT__ "elemental2tree"
 template <class FMM_Mat_t, typename T>
-int elemental2tree(const El::DistMatrix<T,El::VR,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
+int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
-	//assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
+	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VC));
+
+	int data_dof=2;
+	int SCAL_EXP = 1;
+
+	int nlocal, nstart; // petsc vec info
+	double *pt_array,*pt_perm_array;
+	int r,q,ll,rq; // el vec info
+	int nbigs; //Number of large recv (i.e. recv 1 extra data point)
+	int pstart; // p_id of nstart
+	int p = El::mpi::WorldRank(); //p_id
+	int recv_size; // base recv size
+	bool print = p == -1; 
+
+	// Get el vec info
+	ll = Y.Height();
+	const El::Grid* g = &(Y.Grid());
+	r = g->Height();
+	q = g->Width();
+	MPI_Comm comm = (g->Comm()).comm;
+
+	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
+
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int omp_p=omp_get_max_threads();
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+	
+	// Get petsc vec params
+	//VecGetLocalSize(pt_vec,&nlocal);
+	nlocal = (tree->m)/data_dof;
+	//VecGetArray(pt_vec,&pt_array);
+	//VecGetOwnershipRange(pt_vec,&nstart,NULL);
+	MPI_Exscan(&nlocal,&nstart,1,MPI_INT,MPI_SUM,comm);
+
+	// Determine who owns the first element we want
+	rq = r * q;
+	pstart = nstart % rq;
+	nbigs = nlocal % rq;
+	recv_size = nlocal / rq;
+	
+	if(print){
+		std::cout << "r: " << r << " q: " << q <<std::endl;
+		std::cout << "nstart: " << nstart << std::endl;
+		std::cout << "ps: " << pstart << std::endl;
+		std::cout << "nbigs: " << nbigs << std::endl;
+		std::cout << "recv_size: " << recv_size << std::endl;
+	}
+
+	// Make recv sizes
+	std::vector<int> recv_lengths(rq);
+	std::fill(recv_lengths.begin(),recv_lengths.end(),recv_size);
+	if(nbigs >0){
+		for(int i=0;i<nbigs;i++){
+			recv_lengths[(pstart + i) % rq] += 1;
+		}
+	}
+
+	// Make recv disps
+	std::vector<int> recv_disps = exscan(recv_lengths);
+
+	// All2all to get send sizes
+	std::vector<int> send_lengths(rq);
+	MPI_Alltoall(&recv_lengths[0], 1, MPI_INT, &send_lengths[0], 1, MPI_INT,comm);
+
+	// Scan to get send_disps
+	std::vector<int> send_disps = exscan(send_lengths);
+
+	// Do all2allv to get data on correct processor
+	std::vector<El::Complex<double>> recv_data(nlocal);
+	std::vector<El::Complex<double>> recv_data_ordered(nlocal);
+	//MPI_Alltoallv(el_vec.Buffer(),&send_lengths[0],&send_disps[0],MPI_DOUBLE, \
+			&recv_data[0],&recv_lengths[0],&recv_disps[0],MPI_DOUBLE,comm);
+	El::mpi::AllToAll(Y.LockedBuffer(), &send_lengths[0], &send_disps[0], &recv_data[0],&recv_lengths[0],&recv_disps[0],comm);
+	
+	if(print){
+		//std::cout << "Send data: " <<std::endl << *el_vec.Buffer() <<std::endl;
+		std::cout << "Send lengths: " <<std::endl << send_lengths <<std::endl;
+		std::cout << "Send disps: " <<std::endl << send_disps <<std::endl;
+		std::cout << "Recv data: " <<std::endl << recv_data <<std::endl;
+		std::cout << "Recv lengths: " <<std::endl << recv_lengths <<std::endl;
+		std::cout << "Recv disps: " <<std::endl << recv_disps <<std::endl;
+	}
+	
+	// Reorder the data so taht it is in the right order for the fmm tree
+	for(int p=0;p<rq;p++){
+		int base_idx = (p - pstart + rq) % rq;
+		int offset = recv_disps[p];
+		for(int i=0;i<recv_lengths[p];i++){
+			recv_data_ordered[base_idx + rq*i] = recv_data[offset + i];
+		}
+	}
+
+	// loop through and put the data into the tree
+
+	#pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist.size()* tid   )/omp_p;
+		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+		for(size_t i=i_start;i<i_end;i++){
+			pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+			double s=std::pow(2.0,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
+
+			size_t Y_offset=i*n_coeff3;
+			for(size_t j=0;j<n_coeff3;j++){
+				double real = El::RealPart(recv_data_ordered[j+Y_offset])*s;
+				double imag = El::ImagPart(recv_data_ordered[j+Y_offset])*s;
+				coeff_vec[j]=real;
+				coeff_vec[j+n_coeff3]=imag;
+			}
+			nlist[i]->DataDOF()=2;
+		}
+	}
+
+	if(print){std::cout <<"here?"<<std::endl;}
+
+	return 0;
+
+}
+
+*/
+
+#undef __FUNCT__
+#define __FUNCT__ "elemental2tree"
+template <class FMM_Mat_t, typename T>
+int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
+	
+	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VC));
 
 	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
@@ -825,6 +990,7 @@ int elemental2tree(const El::DistMatrix<T,El::VR,El::STAR> &Y, InvMedTree<FMM_Ma
 		}
 	}
 
+	MPI_Barrier(*comm);
 	return 0;
 }
 
@@ -918,13 +1084,138 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 	return 0;
 }
 
+/*
+#undef __FUNCT__
+#define __FUNCT__ "tree2elemental"
+template <class FMM_Mat_t, typename T>
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR> &Y){
+
+	int data_dof=2;
+	int SCAL_EXP = 1;
+
+	int nlocal,nstart,gsize; //local elements, start p_id, global size
+	double *pt_array; // will hold local array
+	int r,q,rq; //Grid sizes
+	int nbigs; //Number of large sends (i.e. send 1 extra data point)
+	int pstart; // p_id of nstart
+	int p = El::mpi::WorldRank(); //p_id
+	int send_size; // base send size
+	bool print = p == -1; 
+
+
+	// Get Grid and associated params
+	const El::Grid* g = &(Y.Grid());
+	r = g->Height();
+	q = g->Width();
+	MPI_Comm comm = (g->Comm()).comm;
+
+	std::vector<FMMNode_t*> nlist = tree->GetNGLNodes();
+
+	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
+	int omp_p=omp_get_max_threads();
+	size_t n_coeff3=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
+
+	// Get sizes, array in petsc 
+	//VecGetSize(pt_vec,&gsize);
+	gsize = tree->M/data_dof;
+	nlocal = tree->m/data_dof;
+	//VecGetLocalSize(pt_vec,&nlocal);
+	//VecGetArray(pt_vec,&pt_array);
+	MPI_Exscan(&nlocal,&nstart,1,MPI_INT,MPI_SUM,comm);
+	//VecGetOwnershipRange(pt_vec,&nstart,NULL);
+
+	//Find processor that nstart belongs to, number of larger sends
+	rq = r * q;
+	pstart = nstart % rq; //int div
+	nbigs = nlocal % rq;
+	send_size = nlocal/rq;
+	
+	if(print){
+		std::cout << "r: " << r << " q: " << q <<std::endl;
+		std::cout << "nstart: " << nstart << std::endl;
+		std::cout << "ps: " << pstart << std::endl;
+		std::cout << "nbigs: " << nbigs << std::endl;
+		std::cout << "send_size: " << send_size << std::endl;
+	}
+
+	// Make send_lengths
+	std::vector<int> send_lengths(rq);
+	std::fill(send_lengths.begin(),send_lengths.end(),send_size);
+	if(nbigs >0){
+		for(int j=0;j<nbigs;j++){
+			send_lengths[(pstart + j) % rq] += 1;
+		}
+	}
+
+	// Make send_disps
+	std::vector<int> send_disps = exscan(send_lengths);
+
+	std::vector<El::Complex<double>> indata(nlocal);
+	// copy the data from an ffm tree to into a local vec of complex data for sending #pragma omp parallel for
+	for(size_t tid=0;tid<omp_p;tid++){
+		size_t i_start=(nlist.size()* tid   )/omp_p;
+		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
+		for(size_t i=i_start;i<i_end;i++){
+			pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
+			double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
+
+			size_t Y_offset=(i)*n_coeff3;
+			for(size_t j=0;j<n_coeff3;j++){
+				double real = coeff_vec[j]*s; // local indices as in the pvfmm trees
+				double imag = coeff_vec[j+n_coeff3]*s;
+				El::Complex<double> val;
+				El::SetRealPart(val,real);
+				El::SetImagPart(val,imag);
+
+				indata[Y_offset+j] = val;
+			}
+		}
+	}
+
+
+	// Make send_data
+	std::vector<El::Complex<double>> send_data(nlocal);
+	for(int proc=0;proc<rq;proc++){
+		int offset = send_disps[proc];
+		int base_idx = (proc - pstart + rq) % rq; 
+		for(int j=0; j<send_lengths[proc]; j++){
+			int idx = base_idx + (j * rq);
+			send_data[offset + j] = indata[idx];
+		}
+	}
+
+	// Do all2all to get recv_lengths
+	std::vector<int> recv_lengths(rq);
+	MPI_Alltoall(&send_lengths[0], 1, MPI_INT, &recv_lengths[0], 1, MPI_INT,comm);
+
+	// Scan to get recv_disps
+	std::vector<int> recv_disps = exscan(recv_lengths);
+
+	// Do all2allv to get data on correct processor
+	El::Complex<double> * recv_data = Y.Buffer();
+	//MPI_Alltoallv(&send_data[0],&send_lengths[0],&send_disps[0],MPI_DOUBLE, \
+	//		&recv_data[0],&recv_lengths[0],&recv_disps[0],MPI_DOUBLE,comm);
+	El::mpi::AllToAll(&send_data[0], &send_lengths[0], &send_disps[0], &recv_data[0],&recv_lengths[0],&recv_disps[0],comm);
+
+	if(print){
+		std::cout << "Send data: " <<std::endl << send_data <<std::endl;
+		std::cout << "Send lengths: " <<std::endl << send_lengths <<std::endl;
+		std::cout << "Send disps: " <<std::endl << send_disps <<std::endl;
+		std::cout << "Recv data: " <<std::endl << recv_data <<std::endl;
+		std::cout << "Recv lengths: " <<std::endl << recv_lengths <<std::endl;
+		std::cout << "Recv disps: " <<std::endl << recv_disps <<std::endl;
+	}
+
+	return 0;
+}
+*/
 
 #undef __FUNCT__
 #define __FUNCT__ "tree2elemental"
 template <class FMM_Mat_t, typename T>
-int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VR,El::STAR> &Y){
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR> &Y){
 
-	//assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VR));
+	assert((Y.DistData().colDist == El::STAR) and (Y.DistData().rowDist == El::VC));
 
 	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
@@ -998,7 +1289,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VR,El::STAR
 
 #undef __FUNCT__
 #define __FUNCT__ "vec2elemental"
-int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>,El::VR,El::STAR > &Y){
+int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<double>,El::VC,El::STAR > &Y){
 
 	const El::Grid& g = Y.Grid();
 	El::mpi::Comm elcomm = g.Comm();
@@ -1045,7 +1336,7 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 
 	comp_alltoall_sizes(input_sizes, output_sizes, sendcnts, sdispls, recvcnts, rdispls, comm);
 
-		El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],comm);
+	El::mpi::AllToAll(&indata[0], &sendcnts[0], &sdispls[0], &outdata[0],&recvcnts[0],&rdispls[0],comm);
 
 	El::Complex<double> *Y_ptr = Y.Buffer();
 	int sz = outdata.size();
@@ -1063,7 +1354,7 @@ int vec2elemental(const std::vector<double> &vec, El::DistMatrix<El::Complex<dou
 
 #undef __FUNCT__
 #define __FUNCT__ "elemental2vec"
-int elemental2vec(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &Y, std::vector<double> &vec){
+int elemental2vec(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &Y, std::vector<double> &vec){
 
 	const El::Grid& g = Y.Grid();
 	El::mpi::Comm elcomm = g.Comm();
@@ -2030,7 +2321,7 @@ PetscErrorCode LR_mult(Mat M, Vec U, Vec Y){
 
 #undef __FUNCT__
 #define __FUNCT__ "G_func"
-int G_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, G_data *g_data){
+int G_func(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, G_data *g_data){
 
 	// This function simply computes the convolution of G with an input U
 	// and then gets only the output at the detector locations
@@ -2043,11 +2334,20 @@ int G_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::Dis
 	MPI_Comm_rank(comm,&rank);
 	if(!rank) std::cout << "G function " << std::endl; 
 
+	//std::cout << "Norm in" << El::OneNorm(x) << std::endl;
+	
 	elemental2tree(x,temp);
+	//MPI_Barrier(comm);
+	temp->Write2File("../results/g",6);
 	temp->Multiply(mask,1);
+	//MPI_Barrier(comm);
 	temp->ClearFMMData();
+	//temp->Write2File("../results/x_after_clear",6);
+	MPI_Barrier(comm);
 	temp->RunFMM();
 	temp->Copy_FMMOutput();
+
+	temp->Write2File("../results/gf_y",4);
 	std::vector<double> detector_values = temp->ReadVals(detector_coord);
 
 	vec2elemental(detector_values,y);
@@ -2056,7 +2356,7 @@ int G_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::Dis
 
 #undef __FUNCT__
 #define __FUNCT__ "Gt_func"
-int Gt_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, G_data *g_data){
+int Gt_func(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, G_data *g_data){
 
 	std::vector<double> detector_coord = g_data->src_coord;
 	pvfmm::PtFMM_Tree* Gt_tree = g_data->pt_tree;
@@ -2081,7 +2381,9 @@ int Gt_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::Di
 
 	// Insert the values back in
 	temp->Trg2Tree(trg_value);
+	temp->Write2File("../results/gt",6);
 	temp->Multiply(mask,1);
+	temp->Write2File("../results/gtm",6);
 	tree2elemental(temp, x);
 
 	return 0;
@@ -2090,7 +2392,7 @@ int Gt_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::Di
 
 #undef __FUNCT__
 #define __FUNCT__ "U_func"
-int U_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, U_data *u_data){
+int U_func(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, U_data *u_data){
 	// u  is the vector containing the random coefficients for each of the point sources
 
 	if((x.ColAlign() != y.ColAlign()) or (x.RowAlign() != y.RowAlign())){
@@ -2143,7 +2445,7 @@ int U_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::Dis
 
 #undef __FUNCT__
 #define __FUNCT__ "Ut_func"
-int Ut_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, U_data *u_data){
+int Ut_func(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, U_data *u_data){
 
 
 	if((x.ColAlign() != y.ColAlign()) or (x.RowAlign() != y.RowAlign())){
@@ -2180,7 +2482,7 @@ int Ut_func(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, El::Di
 
 #undef __FUNCT__
 #define __FUNCT__ "U_func2"
-int U_func2(const El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y, U_data *u_data){
+int U_func2(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, U_data *u_data){
 	// u  is the vector containing the random coefficients for each of the point sources
 
 	InvMedTree<FMM_Mat_t>* mask = u_data->mask;
@@ -2262,11 +2564,11 @@ int rsvd_test_t_func(El::DistMatrix<El::Complex<double>> &x, El::DistMatrix<El::
 #undef __FUNCT__
 #define __FUNCT__ "B_func"
 int B_func(
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *V_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *S_G,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *V_G,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c
 		)
@@ -2284,12 +2586,12 @@ int B_func(
 
 	elemental2tree(x,temp_c);
 
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Wx(g);
+	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Wx(g);
 	El::Zeros(Wx,N_disc,R_s);
 
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Wx_i = El::View(Wx, 0, i, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Wx_i = El::View(Wx, 0, i, N_disc, 1);
 		elemental2tree(W_i,temp);
 		temp->Multiply(temp_c,1);
 		tree2elemental(temp,Wx_i);
@@ -2299,7 +2601,7 @@ int B_func(
 	El::Complex<double> beta  = El::Complex<double>(0.0);
 
 
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VtWx(g);
+	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VtWx(g);
 	El::Zeros(VtWx,R_d,R_s);
 	El::Gemm(El::ADJOINT,El::NORMAL,alpha,*V_G,Wx,beta,VtWx);
 
@@ -2317,11 +2619,11 @@ int B_func(
 #undef __FUNCT__
 #define __FUNCT__ "Bt_func"
 int Bt_func(
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &x,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> &y,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *S_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *V_G,
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> *W,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *S_G,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *V_G,
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> *W,
 		InvMedTree<FMM_Mat_t>* temp,
 		InvMedTree<FMM_Mat_t>* temp_c,
 		InvMedTree<FMM_Mat_t>* temp2
@@ -2345,17 +2647,17 @@ int Bt_func(
 
 	//El::Display(x,"Bt vec");
 	El::DistMatrix<El::Complex<double>,El::STAR,El::STAR> x2(g);
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> x_copy(g);
+	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> x_copy(g);
 	El::Copy(x,x_copy);
 	x2 = x_copy;
 	x2.Resize(R_d,R_s);
 	x_copy = x2;
 
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> Sx(g);
+	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Sx(g);
 	El::Zeros(Sx,R_d,R_s);
 	El::DiagonalScale(El::LEFT,El::ADJOINT,*S_G,x_copy);
 
-	El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx(g);
+	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VSx(g);
 	El::Zeros(VSx,N_disc,R_s);
 	El::Gemm(El::NORMAL,El::NORMAL,alpha,*V_G,x_copy,beta,VSx);
 
@@ -2372,8 +2674,8 @@ int Bt_func(
 
 
 	for(int i=0;i<R_s;i++){
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> VSx_i = El::View(VSx, 0, i, N_disc, 1);
-		El::DistMatrix<El::Complex<double>,El::VR,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VSx_i = El::View(VSx, 0, i, N_disc, 1);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> W_i = El::View(*W, 0, i, N_disc, 1);
 		elemental2tree(W_i,temp_c);
 		elemental2tree(VSx_i,temp);
 		temp->ConjMultiply(temp_c,1);

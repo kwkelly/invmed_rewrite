@@ -111,7 +111,7 @@ void one_fn( const double* coord, int n, double* out){
 	for(int i=0;i<n;i++){
 		const double* c=&coord[i*COORD_DIM];
 		{
-			out[i*dof]=1;
+			out[i*dof+0]=1;
 			out[i*dof+1]=0;
 		}
 	}
@@ -178,10 +178,12 @@ void eight_pt_sol_fn(const double* coord, int n, double* out){
 			double r6=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.375)*(c[1]-0.375)+(c[2]-0.625)*(c[2]-0.625));
 			double r7=sqrt((c[0]-0.375)*(c[0]-0.375)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.625)*(c[2]-0.625));
 			double r8=sqrt((c[0]-0.625)*(c[0]-0.625)+(c[1]-0.625)*(c[1]-0.625)+(c[2]-0.625)*(c[2]-0.625));
+			bool flag = false;
+			flag = (r1 == 0 || r2 == 0 || r3 == 0 || r4 == 0 || r5 == 0 || r6 == 0 || r7 == 0 || r8 == 0) ? true : false;
 			// Assumes that k = 1;
-			if(dof>1) out[i*dof+0]= 1/(4*M_PI*r1)*cos(1*r1) + 1/(4*M_PI*r2)*cos(1*r2) +  1/(4*M_PI*r3)*cos(1*r3) +  1/(4*M_PI*r4)*cos(1*r4)
+			if(dof>1) out[i*dof+0]= flag ? 0.0 : 1/(4*M_PI*r1)*cos(1*r1) + 1/(4*M_PI*r2)*cos(1*r2) +  1/(4*M_PI*r3)*cos(1*r3) +  1/(4*M_PI*r4)*cos(1*r4)
 				+  1/(4*M_PI*r5)*cos(1*r5) +  1/(4*M_PI*r6)*cos(1*r6) +  1/(4*M_PI*r7)*cos(1*r7) +  1/(4*M_PI*r8)*cos(1*r8);
-			if(dof>1) out[i*dof+1]= 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2) +  1/(4*M_PI*r3)*sin(1*r3) +  1/(4*M_PI*r4)*sin(1*r4)
+			if(dof>1) out[i*dof+1]= flag ? 0.0 : 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2) +  1/(4*M_PI*r3)*sin(1*r3) +  1/(4*M_PI*r4)*sin(1*r4)
 				+  1/(4*M_PI*r5)*sin(1*r5) +  1/(4*M_PI*r6)*sin(1*r6) +  1/(4*M_PI*r7)*sin(1*r7) +  1/(4*M_PI*r8)*sin(1*r8);
 			//if(dof>1) out[i*dof+1]= 1/(4*M_PI*r1)*sin(1*r1) + 1/(4*M_PI*r2)*sin(1*r2);
 		}

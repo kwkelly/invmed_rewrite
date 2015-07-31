@@ -39,11 +39,18 @@ file(STRINGS $ENV{PVFMM_DIR}/MakeVariables make_variables)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
-add_executable(invmed src/invmed.cpp src/funcs.cpp)
-add_executable(test test/test.cpp src/funcs.cpp)
-add_executable(faims test/faims.cpp src/funcs.cpp)
+add_executable(invmed src/invmed.cpp)
+add_executable(test test/test.cpp)
+add_executable(faims test/faims.cpp)
 add_executable(dist_test test/dist_test.cpp)
-add_executable(faims_tests test/faims_tests.cpp src/funcs.cpp)
+add_executable(faims_tests test/faims_tests.cpp)
+add_executable(empty_test src/empty_test.cpp)
+add_library(point_distribs src/point_distribs.cpp)
+#add_library(helm_kernels src/helm_kernels.cpp)
+add_library(funcs src/funcs.cpp)
+add_library(operators src/operators.cpp)
+add_library(convert_elemental src/convert_elemental.cpp)
+add_library(convert_petsc src/convert_petsc.cpp)
 
 find_package(MPI REQUIRED)
 include_directories(${MPI_CXX_INCLUDE_PATH})
@@ -61,7 +68,7 @@ include_directories("../rsvd/include")
 
 message(STATUS ${pvfmm_INCLUDE_DIRS})
 
-set(LIBS ${LIBS} ${PETSC_LIBRARIES} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_DIRECTORIES})
+set(LIBS ${LIBS} ${PETSC_LIBRARIES} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_DIRECTORIES} point_distribs funcs convert_elemental operators convert_petsc)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-rpath,$ENV{TACC_IMPI_LIB} -std=c++11 -mkl -g -O1 -wd3218 -wd2570 -I/opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
 
@@ -70,3 +77,4 @@ target_link_libraries(test ${LIBS})
 target_link_libraries(dist_test ${LIBS})
 target_link_libraries(faims ${LIBS})
 target_link_libraries(faims_tests ${LIBS})
+target_link_libraries(empty_test ${LIBS})

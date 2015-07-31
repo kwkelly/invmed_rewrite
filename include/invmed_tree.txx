@@ -1197,6 +1197,18 @@ void InvMedTree<FMM_Mat_t>::FilterChebTree(std::vector<double>& coeff_scaling){
   }
 }
 
+template <class FMM_Mat_t>
+void InvMedTree<FMM_Mat_t>::FMMSetup(){
+
+	const MPI_Comm* comm=this->Comm();
+	FMM_Mat_t* fmm_mat= new FMM_Mat_t;
+	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,*comm,this->kernel);
+	this->SetupFMM(fmm_mat);
+
+	delete fmm_mat;
+	return;
+}
+
 
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::Zero(){

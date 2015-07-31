@@ -53,6 +53,16 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 		this->is_initialized = false;
 		InvMedTree::m_instances.insert(this);
 	};
+
+  InvMedTree<FMM_Mat_t>(void (*fn_)(const  double* coord, int n, double* out), double fmax_, const pvfmm::Kernel<double>* kernel_, pvfmm::BoundaryType bndry_ = pvfmm::FreeSpace , MPI_Comm c = MPI_COMM_WORLD) : pvfmm::FMM_Tree<FMM_Mat_t>(c){
+		this->fn = fn_;
+		this->f_max = fmax_;
+		this->kernel=kernel_;
+		this->bndry=bndry_;
+		this->is_initialized = false;
+		InvMedTree::m_instances.insert(this);
+	};
+
   virtual ~InvMedTree(){
 		InvMedTree::m_instances.erase(this);		
 	};
@@ -66,6 +76,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	void Copy(InvMedTree<FMM_Mat_t>* other);
 	void FilterChebTree(std::vector<double>& coeff_scaling);
 	void Zero();
+	void FMMSetup();
 	pvfmm::PtFMM_Tree* CreatePtFMMTree(std::vector<double> &src_coord, std::vector<double> &src_value, const pvfmm::Kernel<double>* kernel);
 	void Trg2Tree(std::vector<double> &trg_value);
 	std::vector<double> ReadVals(std::vector<double> &coord);
@@ -73,11 +84,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
   double Norm2();
   double Norm2c();
 	std::vector<double> Integrate();
-
 	std::vector<double> ChebPoints();
-
-
-
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
 };
 

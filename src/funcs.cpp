@@ -306,8 +306,23 @@ void sc_fn(const double* coord, int n, double* out){
 
 }
 
+// sin(r)
+void sin_fn(const double* coord, int n, double* out){
+	int COORD_DIM = 3;
+	int dof=2;
+	for(int i=0;i<n;i++){
+		const double* c=&coord[i*COORD_DIM];
+		{
+			double r_2=(c[0]-0.5)*(c[0]-0.5)+(c[1]-0.5)*(c[1]-0.5)+(c[2]-0.5)*(c[2]-0.5);
+			double r = sqrt(r_2);
+			// Assumes that k = 1;
+			if(dof>1) out[i*dof+0]= sin(r);
+			if(dof>1) out[i*dof+1]= 0.0;
+		}
+	}
+}
 
-// sin + icos
+// sin + icos (1or)
 void sc_osc_fn(const double* coord, int n, double* out){
 	int COORD_DIM = 3;
 	int dof=2;

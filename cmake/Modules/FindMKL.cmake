@@ -17,7 +17,7 @@
 
 include(FindPackageHandleStandardArgs)
 
-set(INTEL_ROOT "/opt/apps/intel/13/composer_xe_2013_sp1.1.106" CACHE PATH "Folder contains intel libs")
+set(INTEL_ROOT $ENV{TACC_MKL_DIR}/.. CACHE PATH "Folder contains intel libs")
 set(MKL_ROOT ${INTEL_ROOT}/mkl CACHE PATH "Folder contains MKL")
 
 # Find include dir

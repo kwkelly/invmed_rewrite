@@ -1,6 +1,6 @@
 #include "invmed_tree.hpp"
 #include <iostream>
-#include <petscksp.h>
+//#include <petscksp.h>
 #include <profile.hpp>
 #include "funcs.hpp"
 #include <pvfmm.hpp>
@@ -16,22 +16,22 @@
 #include "helm_kernels.hpp"
 #include "convert_elemental.hpp"
 #include "operators.hpp"
-#include "convert_petsc.hpp"
+//#include "convert_petsc.hpp"
 
 
 #define VTK_ORDER 4
-char SAVE_DIR[PETSC_MAX_PATH_LEN];
+//char SAVE_DIR[PETSC_MAX_PATH_LEN];
 std::string SAVE_DIR_STR;
 
 // pt source locations
-std::vector<double> pt_src_locs;
+//std::vector<double> pt_src_locs;
 // random coefficients
-std::vector<double> coeffs;
-void phi_0_fn(const double* coord, int n, double* out);
-void phi_0_fn(const double* coord, int n, double* out)
-{
-	linear_comb_of_pt_src(coord, n, out, coeffs, pt_src_locs);
-}
+//std::vector<double> coeffs;
+//void phi_0_fn(const double* coord, int n, double* out);
+//void phi_0_fn(const double* coord, int n, double* out)
+//{
+//	linear_comb_of_pt_src(coord, n, out, coeffs, pt_src_locs);
+//}
 
 auto test_function = prod_fn;
 
@@ -59,7 +59,6 @@ int el_test(MPI_Comm &comm){
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	InvMedTree<FMM_Mat_t> temp  = InvMedTree<FMM_Mat_t>(prod_fn,1.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> temp1 = InvMedTree<FMM_Mat_t>(sc_fn,1.0,kernel,bndry,comm);
@@ -180,7 +179,6 @@ int Zero_test(MPI_Comm &comm){
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -218,7 +216,6 @@ int init_test(MPI_Comm &comm){
 	// Set up some trees
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	InvMedTree<FMM_Mat_t> one(one_fn,1.0,kernel,bndry,comm);
 
@@ -242,7 +239,6 @@ int Ufunc2_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -333,7 +329,6 @@ int Ufunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -479,7 +474,6 @@ int Utfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -516,7 +510,7 @@ int Utfunc_test(MPI_Comm &comm){
 	u_data.src_coord = detector_coord;
 	u_data.bndry = bndry;
 	u_data.kernel=kernel;
-	u_data.fn = phi_0_fn;
+	//u_data.fn = phi_0_fn;
 	u_data.coeffs=&coeffs;
 	u_data.comm=comm;
 
@@ -589,7 +583,6 @@ int Ufunc2Utfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -714,7 +707,6 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	int data_dof = 2;
 
@@ -854,7 +846,6 @@ int Gfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	std::vector<double> detector_coord = unif_point_distrib(8,.25,.75,comm);
 
@@ -939,7 +930,6 @@ int Gtfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	std::vector<double> detector_coord = unif_point_distrib(8,.25,.75,comm);
 
@@ -1015,7 +1005,6 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 	//std::vector<double> detector_coord = {.5,.5,.5}; //equiplane(1,0,1.0);
 	//std::vector<double> detector_coord = unif_plane(1, 0, 0.125, comm);
@@ -1124,7 +1113,6 @@ int orthogonality_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 
 	InvMedTree<FMM_Mat_t> s = InvMedTree<FMM_Mat_t>(sin2pix_fn,1.0,kernel,bndry,comm);
@@ -1173,7 +1161,6 @@ int BfuncBtfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	PetscErrorCode ierr;
 
 
 	InvMedTree<FMM_Mat_t> temp   = InvMedTree<FMM_Mat_t>(one_fn,1.0,kernel,bndry,comm);
@@ -1287,7 +1274,6 @@ int grsvd_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel_low;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj_low;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	//PetscErrorCode ierr;
 	int size, rank;
 	MPI_Comm_size(comm, &size);
 	MPI_Comm_rank(comm, &rank);
@@ -1758,7 +1744,6 @@ int save_mat_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel_low;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj_low;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-	//PetscErrorCode ierr;
 	int size, rank;
 	MPI_Comm_size(comm, &size);
 	MPI_Comm_rank(comm, &rank);
@@ -1926,71 +1911,39 @@ int save_mat_test(MPI_Comm &comm){
 ////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]){
-	std::cout << "before getting options" << std::endl;
 	static char help[] = "\n\
-												-eta        <Real>   Inf norm of \\eta\n\
 												-ref_tol    <Real>   Tree refinement tolerance\n\
 												-min_depth  <Int>    Minimum tree depth\n\
 												-max_depth  <Int>    Maximum tree depth\n\
 												-fmm_q      <Int>    Chebyshev polynomial degree\n\
 												-fmm_m      <Int>    Multipole order (+ve even integer)\n\
-												-tol 			  <Real>   GMRES/CG residual tolerance\n\
-												-iter 			<Int>    GMRES/CG maximum iterations\n\
-												-obs				<Int>		 0 for partial, 1 for full\n\
-												-alpha      <Real>	 Regularization parameter\n\
 												";
-	PetscInt  INPUT_DOF=2;
-	PetscReal  SCAL_EXP=1.0;
-	PetscBool  PERIODIC=PETSC_FALSE;
-	PetscBool TREE_ONLY=PETSC_FALSE;
-	PetscInt  MAXDEPTH  =MAX_DEPTH;// Maximum tree depth
-	PetscInt  MINDEPTH   =1;       // Minimum tree depth
-	PetscReal   REF_TOL  =1e-3;    // Tolerance
-	//PetscReal GMRES_TOL  =1e-10;   // Fine mesh GMRES tolerance
-	PetscReal 		TOL  =1e-10;    	// Fine mesh GMRES/CG tolerance
-	PetscInt  CHEB_DEG  =14;       // Fine mesh Cheb. order
-	PetscInt MUL_ORDER  =10;       // Fine mesh mult  order
-	PetscInt MAX_ITER  =200;
-	PetscReal f_max=1;
-	PetscReal eta_=1;
-	PetscInt OBS = 1;
-	PetscReal ALPHA = .001;
+//	PetscInt  INPUT_DOF=2;
+//	PetscReal  SCAL_EXP=1.0;
+//	PetscBool  PERIODIC=PETSC_FALSE;
+//	PetscBool TREE_ONLY=PETSC_FALSE;
+//	PetscInt  MAXDEPTH  =MAX_DEPTH;// Maximum tree depth
+//	PetscInt  MINDEPTH   =1;       // Minimum tree depth
+//	PetscReal   REF_TOL  =1e-3;    // Tolerance
+//	//PetscReal GMRES_TOL  =1e-10;   // Fine mesh GMRES tolerance
+//	PetscReal 		TOL  =1e-10;    	// Fine mesh GMRES/CG tolerance
+//	PetscInt  CHEB_DEG  =14;       // Fine mesh Cheb. order
+//	PetscInt MUL_ORDER  =10;       // Fine mesh mult  order
+//	PetscInt MAX_ITER  =200;
+//	PetscReal f_max=1;
+//	PetscReal eta_=1;
+//	PetscInt OBS = 1;
+//	PetscReal ALPHA = .001;
 
-  PetscErrorCode ierr;
-  PetscInitialize(&argc,&argv,0,help);
 	El::Initialize( argc, argv );
 
   MPI_Comm comm=MPI_COMM_WORLD;
-  PetscMPIInt    rank,size;
-  ierr = MPI_Comm_rank(PETSC_COMM_WORLD,&rank);CHKERRQ(ierr);
-  ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size);CHKERRQ(ierr);
-
-
-  // Get command line info!
-  PetscOptionsGetInt (NULL,        "-dof",&INPUT_DOF  ,NULL);
-  PetscOptionsGetReal(NULL,       "-scal",& SCAL_EXP  ,NULL);
-  PetscOptionsGetBool(NULL,   "-periodic",& PERIODIC  ,NULL);
-  PetscOptionsGetBool(NULL,       "-tree",& TREE_ONLY ,NULL);
-  PetscOptionsGetInt (NULL, "-max_depth" ,&MAXDEPTH   ,NULL);
-  PetscOptionsGetInt (NULL, "-min_depth" ,&MINDEPTH   ,NULL);
-  PetscOptionsGetReal(NULL,   "-ref_tol" ,&  REF_TOL  ,NULL);
-  PetscOptionsGetReal(NULL, "-tol" ,		  			&TOL  ,NULL);
-  PetscOptionsGetInt (NULL,   "-fmm_q"   ,& CHEB_DEG  ,NULL);
-  PetscOptionsGetInt (NULL,   "-fmm_m"   ,&MUL_ORDER  ,NULL);
-  PetscOptionsGetInt (NULL, "-iter",&       MAX_ITER  ,NULL);
-  PetscOptionsGetReal(NULL,       "-eta" ,&    eta_   ,NULL);
-  PetscOptionsGetInt (NULL, "-obs",&             OBS  ,NULL);
-  PetscOptionsGetReal (NULL, "-alpha",&         ALPHA  ,NULL);
-	PetscOptionsGetString(NULL,"-dir",SAVE_DIR,sizeof(SAVE_DIR),NULL);
-	SAVE_DIR_STR = SAVE_DIR;
-
-	std::cout << SAVE_DIR << std::endl;
-	std::cout << SAVE_DIR_STR << std::endl;
+  int    rank,size;
+  MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
+  MPI_Comm_size(PETSC_COMM_WORLD,&size);
 
 
 	//pvfmm::Profile::Enable(true);
-
-	// Define some stuff!
 
 
 	///////////////////////////////////////////////
@@ -2009,17 +1962,16 @@ int main(int argc, char* argv[]){
 
 	//std::cout << "MINDEPTH: " << MINDEPTH << std::endl;
 
-	InvMedTree<FMM_Mat_t>::cheb_deg = CHEB_DEG;
-	InvMedTree<FMM_Mat_t>::mult_order = MUL_ORDER;
-	InvMedTree<FMM_Mat_t>::tol = REF_TOL;
-	InvMedTree<FMM_Mat_t>::mindepth = MINDEPTH;
-	InvMedTree<FMM_Mat_t>::maxdepth = MAXDEPTH;
-	InvMedTree<FMM_Mat_t>::adap = true;
 	InvMedTree<FMM_Mat_t>::dim = 3;
 	InvMedTree<FMM_Mat_t>::data_dof = 2;
-
-	// Define new trees
-
+	InvMedTree<FMM_Mat_t>::cheb_deg = El::Input("-fmm_q","Chebyshev degree",6);
+	InvMedTree<FMM_Mat_t>::mult_order = El::Input("-fmm_m","Multipole order",10);
+	InvMedTree<FMM_Mat_t>::tol = El::Input("-ref_tol","Refinement Tolerance",1e-6);
+	InvMedTree<FMM_Mat_t>::mindepth = El::Input("-min_depth","Minimum tree depth",3);
+	InvMedTree<FMM_Mat_t>::maxdepth = El::Input("-max_depth","Maximum tree depth",3);
+	InvMedTree<FMM_Mat_t>::adap = El::Input("-adap","Adaptivity for tree construction",true);
+	SAVE_DIR_STR = El::Input("-dir","Directory for saving the functions and the matrices to",".");
+	std::cout << SAVE_DIR_STR << std::endl;
 
 	///////////////////////////////////////////////
 	// TESTS
@@ -2040,7 +1992,6 @@ int main(int argc, char* argv[]){
 	save_mat_test(comm);      MPI_Barrier(comm);
 
 	El::Finalize();
-	PetscFinalize();
 
 	return 0;
 }

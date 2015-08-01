@@ -6,7 +6,6 @@
 #include <fmm_node.hpp>
 #include <fmm_tree.hpp>
 #include <pvfmm.hpp>
-#include <petscksp.h>
 #include <cassert>
 #include <cstring>
 #include <profile.hpp>
@@ -32,7 +31,7 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	double f_max;
 	bool is_initialized;
 
-	PetscInt m,M,n,N,l,L;
+	long long m,M,n,N,l,L;
 	long long loc_octree_nodes;
 	long long glb_octree_nodes;
 	long long previous_octree_nodes;

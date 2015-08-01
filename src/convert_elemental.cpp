@@ -20,7 +20,6 @@ typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 template <class FMM_Mat_t, typename T>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR> &Y){
 
-	PetscErrorCode ierr;
 	int cheb_deg=InvMedTree<FMM_Mat_t>::cheb_deg;
 	const MPI_Comm* comm=tree->Comm();
 	int rank;
@@ -102,7 +101,6 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
 template <class FMM_Mat_t, typename T>
 int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
-	PetscErrorCode ierr;
 	const MPI_Comm* comm=tree->Comm();
 	int cheb_deg = InvMedTree<FMM_Mat_t>::cheb_deg;
 	int rank, size;

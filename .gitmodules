@@ -1,0 +1,3 @@
+[submodule "extern/rsvd"]
+	path = extern/rsvd
+	url = https://github.com/kwkelly/rsvd.git

@@ -1537,28 +1537,18 @@ int grsvd_test(MPI_Comm &comm){
 	
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> r(g);
 		El::Zeros(r,N_disc,1);
-		//elemental2tree(r,temp);
-		//std::vector<double> filt = {1,1};
-		//temp->FilterChebTree(filt);
-		//tree2elemental(temp,r);
 
-		InvMedTree<FMM_Mat_t> t = InvMedTree<FMM_Mat_t>(cs_fn,1.0,kernel,bndry,comm);
-		t.CreateTree(false);
+		InvMedTree<FMM_Mat_t> w = InvMedTree<FMM_Mat_t>(sin_fn,1.0,kernel,bndry,comm);
+		w.CreateTree(false);
 
 		MPI_Barrier(comm);
 
-		tree2elemental(&t,r);
+		tree2elemental(&w,r);
 
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> e(g);
 		El::Zeros(e,R_d,1);
 		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,e);
-
-		//El::DistMatrix<El::Complex<double>,El::VC,El::STAR> f(g);
-		//El::Zeros(f,R_d,1);
-		//El::Gemm(El::NORMAL,El::NORMAL,alpha,S_G,e,beta,f);
 		El::DiagonalScale(El::LEFT,El::NORMAL,S_G,e);
-		//El::Display(f);
-		//El::Display(GY);
 
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> g1(g);
 		El::Zeros(g1,N_d,1);
@@ -1571,18 +1561,17 @@ int grsvd_test(MPI_Comm &comm){
 		
 		El::Axpy(-1.0,i,g1);
 		double ndiff = El::TwoNorm(g1)/El::TwoNorm(i);
-		if(!rank) std::cout << "Relative Error in Approximation of G: " << ndiff << std::endl;
+		if(!rank) std::cout << "||Gw - USV*w||=" << ndiff << std::endl;
 
 		// see how well the projections of eta looks
-		//
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Geta(g);
-		El::Zeros(Vt_Geta,R_d,1);
-		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vt_Geta);
+		tree2elemental(&w,r);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Gw(g);
+		El::Zeros(Vt_Gw,R_d,1);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,Vt_Gw);
 
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VVt_Geta(g);
-		El::Zeros(VVt_Geta,N_disc,1);
-		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Geta,beta,VVt_Geta);
-
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VVt_Gw(g);
+		El::Zeros(VVt_Gw,N_disc,1);
+		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Gw,beta,VVt_Gw);
 
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_1 = El::LockedView(V_G,0,0,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_2 = El::LockedView(V_G,0,1,N_disc,1);
@@ -1626,24 +1615,22 @@ int grsvd_test(MPI_Comm &comm){
 		if(!rank) std::cout << "v2" << integral[1] << std::endl;
 
 
-		elemental2tree(VVt_Geta,&temp);
+		elemental2tree(VVt_Gw,&temp);
 		temp.Write2File((SAVE_DIR_STR+"projection").c_str(),VTK_ORDER);
-		temp.Add(&eta,-1);
+		temp.Add(&w,-1);
 		temp.Write2File((SAVE_DIR_STR+"proj_diff").c_str(),VTK_ORDER);
 
-		El::Axpy(-1.0,EtaVec,VVt_Geta);
-		double coeff_relnorm = El::FrobeniusNorm(VVt_Geta)/El::FrobeniusNorm(EtaVec);
+		El::Axpy(-1.0,r,VVt_Gw);
+		double coeff_relnorm = El::FrobeniusNorm(VVt_Gw)/El::FrobeniusNorm(r);
 		if(!rank) std::cout << "coeff_relnorm=" << coeff_relnorm << std::endl;
 
+		double ls_error = temp.Norm2()/w.Norm2();
+		if(!rank) std::cout << "||w - VV*w|| / ||w||=" << ls_error << std::endl;
 
-		double ls_error = temp.Norm2()/eta.Norm2();
-		if(!rank) std::cout << "||n - VV*n|| / ||n||=" << ls_error << std::endl;
-
-		elemental2tree(EtaVec,&temp);
-		temp.Write2File((SAVE_DIR_STR+"eta_later").c_str(),VTK_ORDER);
+		elemental2tree(r,&temp);
+		temp.Write2File((SAVE_DIR_STR+"w_later").c_str(),VTK_ORDER);
 
 		// test orthogonality
-		//
 		El::DistMatrix<El::Complex<double>,VR,STAR> I(g);
 		El::DistMatrix<El::Complex<double>,VR,STAR> UtU(g);
 		El::Zeros(UtU,R_d,R_d);
@@ -1663,20 +1650,19 @@ int grsvd_test(MPI_Comm &comm){
 		// test some spectrum stuff
 		El::Display(S_G,"Sigma_G");
 
-
 		double sig_1 = El::RealPart(S_G.Get(0,0));
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Geta(g);
-		El::Zeros(Geta,R_d,1);
-		G_sf(EtaVec,Geta);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw(g);
+		El::Zeros(Gw,R_d,1);
+		G_sf(r,Gw);
 
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vteta(g);
-		El::Zeros(Vteta,R_d,1);
-		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vteta);
-		double g_eta_norm = El::TwoNorm(Geta);
-		double Vteta_norm = El::TwoNorm(Vteta);
-		double eta_norm = eta.Norm2();
-		if(!rank) std::cout << "||Gn||/||n||=" << g_eta_norm/eta_norm << std::endl;
-		if(!rank) std::cout << "s_1 * ||Vtn||=" << sig_1*Vteta_norm << std::endl;
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vtw(g);
+		El::Zeros(Vtw,R_d,1);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,Vtw);
+		double g_w_norm = El::TwoNorm(Gw);
+		double Vtw_norm = El::TwoNorm(Vtw);
+		double w_norm = w.Norm2();
+		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
+		if(!rank) std::cout << "s_1 * ||Vtw||=" << sig_1*Vtw_norm << std::endl;
 
 		// another one
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gv1(g);
@@ -1710,19 +1696,17 @@ int grsvd_test(MPI_Comm &comm){
 
 		// another one
 		// ensure that ||G eta|| <=s1*||V'eta||
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Geta2(g);
-		El::Zeros(Geta2,R_d,1);
-		G_sf(EtaVec,Geta2);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw2(g);
+		El::Zeros(Gw2,R_d,1);
+		G_sf(r,Gw2);
 
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Geta2(g);
-		El::Zeros(Vt_Geta2,R_d,1);
-		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,EtaVec,beta,Vt_Geta2);
+		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Gw2(g);
+		El::Zeros(Vt_Gw2,R_d,1);
+		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,Vt_Gw2);
 
-		double g_eta_norm2 = El::TwoNorm(Geta2);
-		double Vt_Geta_norm = El::TwoNorm(Vt_Geta2);
-		if(!rank) std::cout << "||G_eta|| <= s_1*||V'eta||=" << (g_eta_norm2 <= sig_1*Vt_Geta_norm) << std::endl;
-
-
+		double g_w_norm2 = El::TwoNorm(Gw2);
+		double Vt_Gw_norm = El::TwoNorm(Vt_Gw2);
+		if(!rank) std::cout << "||G_eta|| <= s_1*||V'eta||=" << (g_w_norm2 <= sig_1*Vt_Gw_norm) << std::endl;
 	}
 
 	delete fmm_mat;

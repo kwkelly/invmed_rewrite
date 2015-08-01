@@ -30,6 +30,8 @@ void cs_fn(const double* coord, int n, double* out);
 
 void sc_fn(const double* coord, int n, double* out);
 
+void sin_fn(const double* coord, int n, double* out);
+
 void sc_osc_fn(const double* coord, int n, double* out);
 
 void scc_fn(const double* coord, int n, double* out);

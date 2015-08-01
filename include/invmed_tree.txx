@@ -1212,50 +1212,6 @@ void InvMedTree<FMM_Mat_t>::FMMSetup(){
 
 template <class FMM_Mat_t>
 void InvMedTree<FMM_Mat_t>::Zero(){
-/*
-	typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
-
-	std::vector<FMMNode_t*> nlist = this->GetNGLNodes();
-  if(!nlist.size()) return;
-
-  int cheb_deg=nlist[0]->ChebDeg();
-  int n_coeff=(cheb_deg+1)*(cheb_deg+2)*(cheb_deg+3)/6;
-  int data_dim=nlist[0]->ChebData().Dim()/n_coeff;
-  assert(data_dim*n_coeff==nlist[0]->ChebData().Dim());
-
-
-  int omp_p=omp_get_max_threads();
-	#pragma omp parallel for
-	for(size_t tid=0;tid<omp_p;tid++){
-		size_t i_start=(nlist.size()* tid   )/omp_p;
-		size_t i_end  =(nlist.size()*(tid+1))/omp_p;
-
-		for(size_t i=i_start;i<i_end;i++){
-			pvfmm::Vector<double>& coeff_vec =nlist[i]->ChebData();
-			for(size_t j=0;j<n_coeff*data_dof;j++){
-				coeff_vec[j] = 0;
-			}
-			nlist[i]->DataDOF()=data_dof;
-		}
-	}
-
-
-
-
-
-  #pragma omp parallel for
-  for(size_t i=0;i<nlist.size();i++){
-    pvfmm::Vector<double>& cheb_data=nlist[i]->ChebData();
-    size_t idx=0;
-    for(size_t j=0;j<data_dim;j++)
-    for(size_t j0=0;j0      <=cheb_deg;j0++)
-    for(size_t j1=0;j0+j1   <=cheb_deg;j1++)
-    for(size_t j2=0;j0+j1+j2<=cheb_deg;j2++){
-      cheb_data[idx]=0;
-      idx++;
-    }
-  }
-*/
 
 	//  may need to change this
 	int SCAL_EXP = 1;

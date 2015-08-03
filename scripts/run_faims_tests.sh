@@ -67,7 +67,7 @@ cat <<-EOS | sbatch
 	#SBATCH -o ../results/$JOBNAME.out
 	#SBATCH -n $(( 2*$N ))
 	#SBATCH -N $N
-	#SBATCH -p largemem
+	#SBATCH -p development
 	#SBATCH -t ${MAX_TIME:-$(echo $MAX_TIME_DEFAULT)}
 	##SBATCH --mail-user=keith@ices.utexas.edu
 	##SBATCH --mail-type=begin

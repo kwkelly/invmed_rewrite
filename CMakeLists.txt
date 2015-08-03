@@ -72,7 +72,7 @@ message(STATUS ${MPI_CXX_LIBRARIES})
 
 set(LIBS ${LIBS} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_LIBRARIES} point_distribs funcs convert_elemental operators)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -mavx -wd3218 -wd2570 -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX -I/opt/apps/intel15/impi_5_0/fftw3/3.3.4/include  ${MPI_CXX_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS}")
 
 #target_link_libraries(invmed ${LIBS})
 #target_link_libraries(test ${LIBS})

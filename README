@@ -3,32 +3,24 @@ This program has been adapted from the var_coeff program written by Dhairya Malh
 
 COMPILING
 ---------
-Require: PETSc, PvFMM
-PETSC_DIR and PVFMM_DIR must be defined.
+Require: Elemental (development version), PvFMM
+PvFMM and Elemental must be in a place where the FindPVFMM and FindElemental cmake modules can find them.
 PvFMM can be downloaded from: https://github.com/dmalhotra/pvfmm
+Elemental can be found at: libelemental.org
 
 To compile:
-> make
+> mkdir build; cd build, cmake ..; make faims_tests
 
 Troubleshooting:
-Modify Makefile as needed.
+Modify CMakeLists.txt as necessary. May need to add more paths to where CMake looks for libs and headers
 
 
 COMMANDLINE OPTIONS
 -------------------
--ref_tol    <Real>   Tree refinement tolerance
 -min_depth  <Int>    Minimum tree depth
 -max_depth  <Int>    Maximum tree depth
 -fmm_q      <Int>    Chebyshev polynomial degree
 -fmm_m      <Int>    Multipole order (+ve even integer)
--tol        <Real>   GMRES/CG residual tolerance
--iter       <Int>    GMRES/CG maximum iterations
--obs        <0/1>		 0 for partial observations, 1 for full
 
-Example: ./bin/invmed -ref_tol 1e-4 min_depth 3 -max_depth 5 -tol 1e-6 -obs 0 -alpha 1e-6
-
-To run tests:
-make ./bin/test
-
-./bin/test -ref_tol 1e-5 min_depth 3 -max_depth 5 -tol 1e-6
+Example: ./build/faims_tests -fmm_q 6 -fmm_m 10 min_depth 3 -max_depth 5
 

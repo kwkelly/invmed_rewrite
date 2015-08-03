@@ -474,15 +474,13 @@ int Utfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel=&helm_kernel;
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
-
 	int data_dof = 2;
 
-	std::vector<double> detector_coord;
-	detector_coord = unif_point_distrib(8, .25, .75, comm);
+	std::vector<double> detector_coord = unif_point_distrib(8, .25, .75, comm);
 
 	InvMedTree<FMM_Mat_t> temp   = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel,bndry,comm);
-	InvMedTree<FMM_Mat_t> temp_c = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel_conj,bndry,comm);
 	InvMedTree<FMM_Mat_t> temp1  = InvMedTree<FMM_Mat_t>(int_test_fn,0.0,kernel,bndry,comm);
+	InvMedTree<FMM_Mat_t> temp_c = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel_conj,bndry,comm);
 	InvMedTree<FMM_Mat_t> mask   = InvMedTree<FMM_Mat_t>(one_fn,1.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> sol    = InvMedTree<FMM_Mat_t>(int_test_sol_fn,1.0,kernel,bndry,comm);
 	// initialize the trees
@@ -511,7 +509,7 @@ int Utfunc_test(MPI_Comm &comm){
 	u_data.bndry = bndry;
 	u_data.kernel=kernel;
 	//u_data.fn = phi_0_fn;
-	u_data.coeffs=&coeffs;
+	//u_data.coeffs=&coeffs;
 	u_data.comm=comm;
 
 
@@ -847,12 +845,13 @@ int Gfunc_test(MPI_Comm &comm){
 	const pvfmm::Kernel<double>* kernel_conj=&helm_kernel_conj;
 	pvfmm::BoundaryType bndry=pvfmm::FreeSpace;
 
+
 	std::vector<double> detector_coord = unif_point_distrib(8,.25,.75,comm);
 
 	InvMedTree<FMM_Mat_t> temp = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> test = InvMedTree<FMM_Mat_t>(int_test_fn,1.0,kernel,bndry,comm);
-	InvMedTree<FMM_Mat_t> sol  = InvMedTree<FMM_Mat_t>(int_test_sol_fn,5.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> mask = InvMedTree<FMM_Mat_t>(one_fn,1.0,kernel,bndry,comm); // why not the mask fn?
+	InvMedTree<FMM_Mat_t> sol  = InvMedTree<FMM_Mat_t>(int_test_sol_fn,5.0,kernel,bndry,comm);
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
@@ -862,7 +861,6 @@ int Gfunc_test(MPI_Comm &comm){
 
 	FMM_Mat_t *fmm_mat=new FMM_Mat_t;
 	fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-
 	temp.SetupFMM(fmm_mat);
 
 	int m = temp.m;
@@ -879,9 +877,9 @@ int Gfunc_test(MPI_Comm &comm){
 	g_data.temp = &temp;
 	g_data.mask= &mask;
 	g_data.src_coord = detector_coord;
+	g_data.comm = comm;
 
 	El::Grid g(comm);
-
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> x(g);
 	El::Zeros(x,M/2,1);
 	tree2elemental(&test,x);
@@ -1014,7 +1012,7 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> temp   = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> temp1  = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> mask   = InvMedTree<FMM_Mat_t>(cmask_fn,1.0,kernel,bndry,comm);
-	InvMedTree<FMM_Mat_t> smooth = InvMedTree<FMM_Mat_t>(prod_fn,1.0,kernel,bndry,comm);
+	InvMedTree<FMM_Mat_t> smooth = InvMedTree<FMM_Mat_t>(sin_fn,1.0,kernel,bndry,comm);
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
@@ -1055,6 +1053,7 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 	g_data.mask= &mask;
 	g_data.src_coord = detector_coord;
 	g_data.pt_tree = pt_tree;
+	g_data.comm = comm;
 
 	El::Grid g(comm);
 
@@ -1088,12 +1087,12 @@ int GfuncGtfunc_test(MPI_Comm &comm){
 	//El::Complex<double> Gxy = El::Dot(x,Gty);
 	El::Complex<double> Gxy = El::Dot(y,Gx);
 
-	double d1 = std::min(fabs(xGty[0]),fabs(El::RealPart(Gxy)));
-	double d2 = std::min(fabs(xGty[1]),fabs(El::ImagPart(Gxy)));
+	//double d1 = std::min(fabs(xGty[0]),fabs(El::RealPart(Gxy)));
+	//double d2 = std::min(fabs(xGty[1]),fabs(El::ImagPart(Gxy)));
 
 	std::string name = __func__;
-	test_less(1e-6,(fabs(xGty[0] - El::RealPart(Gxy)))/d1,name,comm);
-	test_less(1e-6,(fabs(xGty[1] - El::ImagPart(Gxy)))/d2,name,comm);
+	test_less(1e-6,(fabs(xGty[0] - El::RealPart(Gxy))),name,comm);
+	test_less(1e-6,(fabs(xGty[1] - El::ImagPart(Gxy))),name,comm);
 
 
 	delete fmm_mat;
@@ -1534,6 +1533,10 @@ int grsvd_test(MPI_Comm &comm){
 	{ // Test that G is good
 		// Since G takes a function as an input we can not just randomly generate the Chebyshev coefficients gaussing random. 
 		// See comment from the factorization of G_eps for more detail
+		
+		/*
+		 * See if the ||Gw - USV*w||/||Gw|| is small
+		 */
 	
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> r(g);
 		El::Zeros(r,N_disc,1);
@@ -1563,7 +1566,9 @@ int grsvd_test(MPI_Comm &comm){
 		double ndiff = El::TwoNorm(g1)/El::TwoNorm(i);
 		if(!rank) std::cout << "||Gw - USV*w||=" << ndiff << std::endl;
 
-		// see how well the projections of eta looks
+		/*
+		 * Test that ||w - VV*w||/||w|| is small so that w can be well represented in the basis of V
+		 */
 		tree2elemental(&w,r);
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Gw(g);
 		El::Zeros(Vt_Gw,R_d,1);
@@ -1572,6 +1577,25 @@ int grsvd_test(MPI_Comm &comm){
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> VVt_Gw(g);
 		El::Zeros(VVt_Gw,N_disc,1);
 		El::Gemm(El::NORMAL,El::NORMAL,alpha,V_G,Vt_Gw,beta,VVt_Gw);
+
+		elemental2tree(VVt_Gw,&temp);
+		temp.Write2File((SAVE_DIR_STR+"projection").c_str(),VTK_ORDER);
+		temp.Add(&w,-1);
+		temp.Write2File((SAVE_DIR_STR+"proj_diff").c_str(),VTK_ORDER);
+
+		El::Axpy(-1.0,r,VVt_Gw);
+		double coeff_relnorm = El::FrobeniusNorm(VVt_Gw)/El::FrobeniusNorm(r);
+		if(!rank) std::cout << "coefficients ||w - VV*w||/||w||=" << coeff_relnorm << std::endl;
+
+		double ls_error = temp.Norm2()/w.Norm2();
+		if(!rank) std::cout << "||w - VV*w|| / ||w||=" << ls_error << std::endl;
+
+		elemental2tree(r,&temp);
+		temp.Write2File((SAVE_DIR_STR+"w_later").c_str(),VTK_ORDER); // just to see that w is as it was before.
+
+		/*
+		 * Take a look at the first and last few vectors that for the basis for V and ensure that the columns are orthogonal
+		 */
 
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_1 = El::LockedView(V_G,0,0,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_2 = El::LockedView(V_G,0,1,N_disc,1);
@@ -1593,44 +1617,30 @@ int grsvd_test(MPI_Comm &comm){
 		elemental2tree(V_G_l3,&temp);
 		temp.Write2File((SAVE_DIR_STR+"vl3").c_str(),VTK_ORDER);
 
+
+		// test that the vectors are orhtogonal
 		elemental2tree(V_G_1,&temp);
 		elemental2tree(V_G_2,&temp2);
 		temp.ConjMultiply(&temp2,1);
 		std::vector<double> integral = temp.Integrate();
-		if(!rank) std::cout << "v1" << integral[0] << std::endl;
-		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+		if(!rank) std::cout << "<V_G_1, V_G_2> = " << integral[0] << "+i" << integral[1] << std::endl;
 
 		elemental2tree(V_G_1,&temp);
 		elemental2tree(V_G_3,&temp2);
 		temp.ConjMultiply(&temp2,1);
 		integral = temp.Integrate();
-		if(!rank) std::cout << "v1" << integral[0] << std::endl;
-		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+		if(!rank) std::cout << "<V_G_1, V_G_3> = " << integral[0] << "+i" << integral[1] << std::endl;
 
 		elemental2tree(V_G_1,&temp);
 		elemental2tree(V_G_l1,&temp2);
 		temp.ConjMultiply(&temp2,1);
 		integral = temp.Integrate();
-		if(!rank) std::cout << "v1" << integral[0] << std::endl;
-		if(!rank) std::cout << "v2" << integral[1] << std::endl;
+		if(!rank) std::cout << "<V_G_1, V_G_end> = " << integral[0] << "+i" << integral[1] << std::endl;
 
+		/*
+		 * Test the orthogonality of the matrices via elemental
+		 */
 
-		elemental2tree(VVt_Gw,&temp);
-		temp.Write2File((SAVE_DIR_STR+"projection").c_str(),VTK_ORDER);
-		temp.Add(&w,-1);
-		temp.Write2File((SAVE_DIR_STR+"proj_diff").c_str(),VTK_ORDER);
-
-		El::Axpy(-1.0,r,VVt_Gw);
-		double coeff_relnorm = El::FrobeniusNorm(VVt_Gw)/El::FrobeniusNorm(r);
-		if(!rank) std::cout << "coeff_relnorm=" << coeff_relnorm << std::endl;
-
-		double ls_error = temp.Norm2()/w.Norm2();
-		if(!rank) std::cout << "||w - VV*w|| / ||w||=" << ls_error << std::endl;
-
-		elemental2tree(r,&temp);
-		temp.Write2File((SAVE_DIR_STR+"w_later").c_str(),VTK_ORDER);
-
-		// test orthogonality
 		El::DistMatrix<El::Complex<double>,VR,STAR> I(g);
 		El::DistMatrix<El::Complex<double>,VR,STAR> UtU(g);
 		El::Zeros(UtU,R_d,R_d);
@@ -1647,24 +1657,38 @@ int grsvd_test(MPI_Comm &comm){
 		ortho_diff = El::FrobeniusNorm(VtV)/El::FrobeniusNorm(I);
 		if(!rank) std::cout << "Ortho diff: " << ortho_diff << std::endl;
 
-		// test some spectrum stuff
+		/*
+		 * Take a look at the spectrum
+		 */
+
 		El::Display(S_G,"Sigma_G");
+		/*
+		 * ||Gw||/||w||
+		 */
 
 		double sig_1 = El::RealPart(S_G.Get(0,0));
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw(g);
 		El::Zeros(Gw,R_d,1);
 		G_sf(r,Gw);
 
+		double g_w_norm = El::TwoNorm(Gw);
+		double w_norm = w.Norm2();
+		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
+
+		/*
+		 * s_1*||V*w||
+		 */
+
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vtw(g);
 		El::Zeros(Vtw,R_d,1);
 		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,Vtw);
-		double g_w_norm = El::TwoNorm(Gw);
 		double Vtw_norm = El::TwoNorm(Vtw);
-		double w_norm = w.Norm2();
-		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
-		if(!rank) std::cout << "s_1 * ||Vtw||=" << sig_1*Vtw_norm << std::endl;
 
-		// another one
+		if(!rank) std::cout << "s_1 * ||V*w||=" << sig_1*Vtw_norm << std::endl;
+
+		/*
+		 * ||G_v1 - s_1 u_1||
+		 */
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gv1(g);
 		El::Zeros(Gv1,R_d,1);
 		G_sf(V_G_1,Gv1);
@@ -1677,9 +1701,10 @@ int grsvd_test(MPI_Comm &comm){
 		double norm_diff1 = El::TwoNorm(temp_vec);
 
 		if(!rank) std::cout << "||Gv_1 - s_1 u_1||=" << norm_diff1 << std::endl;
-		//if(!rank) std::cout << "s_1 * ||Vt\eta||=" << sig_1*Vteta_norm << std::endl;
 
-		// one more
+		/*
+		 * G*u_1 - s_1 u_1||
+		 */
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gtu1(g);
 		El::Zeros(Gtu1,N_disc,1);
 		Gt_sf(U_G_1,Gtu1);
@@ -1694,8 +1719,10 @@ int grsvd_test(MPI_Comm &comm){
 
 		if(!rank) std::cout << "||Gtu_1 - s_1 v_1||=" << norm_diff2 << std::endl;
 
-		// another one
-		// ensure that ||G eta|| <=s1*||V'eta||
+		/*
+		 * ensure that ||G eta|| <=s1*||V'eta||
+		 */
+
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw2(g);
 		El::Zeros(Gw2,R_d,1);
 		G_sf(r,Gw2);
@@ -1923,8 +1950,8 @@ int main(int argc, char* argv[]){
 
   MPI_Comm comm=MPI_COMM_WORLD;
   int    rank,size;
-  MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
-  MPI_Comm_size(PETSC_COMM_WORLD,&size);
+  MPI_Comm_rank(comm,&rank);
+  MPI_Comm_size(comm,&size);
 
 
 	//pvfmm::Profile::Enable(true);
@@ -1960,11 +1987,11 @@ int main(int argc, char* argv[]){
 	///////////////////////////////////////////////
 	// TESTS
 	//////////////////////////////////////////////
-	init_test(comm);          MPI_Barrier(comm);
-	orthogonality_test(comm); MPI_Barrier(comm);
-	el_test(comm);            MPI_Barrier(comm);
-	el_test2(comm);           MPI_Barrier(comm);
-	Zero_test(comm);          MPI_Barrier(comm);
+	//init_test(comm);          MPI_Barrier(comm);
+	//orthogonality_test(comm); MPI_Barrier(comm);
+	//el_test(comm);            MPI_Barrier(comm);
+	//el_test2(comm);           MPI_Barrier(comm);
+	//Zero_test(comm);          MPI_Barrier(comm);
 	Ufunc2_test(comm);        MPI_Barrier(comm);
 	Utfunc_test(comm);        MPI_Barrier(comm);
 	Ufunc2Utfunc_test(comm);  MPI_Barrier(comm);

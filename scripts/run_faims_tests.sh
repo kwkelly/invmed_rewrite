@@ -64,10 +64,10 @@ cat <<-EOS | sbatch
 	#!/bin/bash
 
 	#SBATCH -J $JOBNAME
-	#SBATCH -o $JOBNAME.out
-	#SBATCH -n $N
+	#SBATCH -o ../results/$JOBNAME.out
+	#SBATCH -n $(( 2*$N ))
 	#SBATCH -N $N
-	#SBATCH -p gpu
+	#SBATCH -p largemem
 	#SBATCH -t ${MAX_TIME:-$(echo $MAX_TIME_DEFAULT)}
 	##SBATCH --mail-user=keith@ices.utexas.edu
 	##SBATCH --mail-type=begin

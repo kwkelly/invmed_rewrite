@@ -1,0 +1,7 @@
+# Ignore everything in this directory
+tags
+build
+.ycm_extra_conf.py
+*.swp
+# Except this file
+!.gitignore

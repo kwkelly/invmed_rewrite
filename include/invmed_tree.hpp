@@ -25,7 +25,6 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 
 	typedef pvfmm::FMM_Tree<FMM_Mat_t> FMM_Tree_t;
   const pvfmm::Kernel<double>* kernel;
-  FMM_Mat_t* fmm_mat;
   pvfmm::BoundaryType bndry;
 	void (*fn)(const  double* coord, int n, double* out);
 	double f_max;
@@ -63,6 +62,9 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	};
 
   virtual ~InvMedTree(){
+		if(fmm_mat != NULL){
+			delete fmm_mat;
+		}
 		InvMedTree::m_instances.erase(this);		
 	};
 	static void SetupInvMed();
@@ -85,6 +87,8 @@ class InvMedTree : public pvfmm::FMM_Tree<FMM_Mat_t>{
 	std::vector<double> Integrate();
 	std::vector<double> ChebPoints();
 	std::vector<pvfmm::FMM_Node<pvfmm::Cheb_Node<double> >* > GetNGLNodes();
+	private:
+		FMM_Mat_t* fmm_mat = NULL;
 };
 
 #include "invmed_tree.txx"

@@ -16,6 +16,7 @@
 #include "helm_kernels.hpp"
 #include "convert_elemental.hpp"
 #include "operators.hpp"
+#include "ops.hpp"
 //#include "convert_petsc.hpp"
 
 
@@ -879,6 +880,8 @@ int Gfunc_test(MPI_Comm &comm){
 	g_data.src_coord = detector_coord;
 	g_data.comm = comm;
 
+	G_op G = G_op(detector_coord, mask_fn, kernel, bndry, comm);
+
 	El::Grid g(comm);
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> x(g);
 	El::Zeros(x,M/2,1);
@@ -889,7 +892,8 @@ int Gfunc_test(MPI_Comm &comm){
 	El::Zeros(Gx,n_detectors,1);
 	temp.Write2File((SAVE_DIR_STR+"test_fn2").c_str(),6);
 	std::cout << "Norm out" << El::OneNorm(x) << std::endl;
-	G_func(x,Gx,&g_data);
+	//G_func(x,Gx,&g_data);
+	G(x,Gx);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> y(g);
 	El::Zeros(y,n_detectors,1);

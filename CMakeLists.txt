@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
-project(InvMed CXX C)
+project(InvMed CXX)
 
 function(echo_all_cmake_variable_values)
   message(STATUS "")
@@ -68,11 +68,11 @@ add_library(convert_elemental src/convert_elemental.cpp)
 
 
 message(STATUS ${pvfmm_INCLUDE_DIRS})
+message(STATUS ${MPI_CXX_LIBRARIES})
 
 set(LIBS ${LIBS} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_LIBRARIES} point_distribs funcs convert_elemental operators)
 
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -mkl -g -O1 -wd3218 -wd2570 -I/opt/apps/intel/13/composer_xe_2013_sp1.1.106/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -mkl -g -O1 -wd3218 -wd2570 -I/opt/apps/intel/15/composer_xe_2015.2.164/mkl/include -DFFTW3_MKL -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX ${MPI_CXX_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -mavx -wd3218 -wd2570 -Qoption,cpp,--extended_float_type -openmp -no-offload -DALLTOALLV_FIX -I/opt/apps/intel15/impi_5_0/fftw3/3.3.4/include  ${MPI_CXX_COMPILE_FLAGS}")
 
 #target_link_libraries(invmed ${LIBS})
 #target_link_libraries(test ${LIBS})

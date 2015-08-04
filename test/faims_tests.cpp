@@ -249,7 +249,6 @@ int Ufunc_test(MPI_Comm &comm){
 	El::Grid g(comm);
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> x(n_pt_srcs,1,g);
 	El::Fill(x,El::Complex<double>(1.0)); 
-	El::Display(x);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Ux(g);
 	El::Zeros(Ux,M/2,1);
@@ -312,12 +311,9 @@ int Utfunc_test(MPI_Comm &comm){
 	std::vector<double> sol_vec = sol.ReadVals(src_coord);
 
 	vec2elemental(sol_vec,x);
-	El::Display(x);
-	El::Display(Uty);
 
 	El::Complex<double> alpha = El::Complex<double>(-1.0);
 	El::Axpy(alpha,x,Uty);
-	El::Display(Uty);
 	double rel_err = El::TwoNorm(Uty)/El::TwoNorm(x);
 
 	std::string name = __func__;
@@ -347,7 +343,7 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t> temp_c = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel_conj,bndry,comm);
 	InvMedTree<FMM_Mat_t> temp1  = InvMedTree<FMM_Mat_t>(zero_fn,0.0,kernel,bndry,comm);
 	InvMedTree<FMM_Mat_t> mask   = InvMedTree<FMM_Mat_t>(cmask_fn,1.0,kernel,bndry,comm);
-	InvMedTree<FMM_Mat_t> smooth = InvMedTree<FMM_Mat_t>(sc_fn,1.0,kernel,bndry,comm);
+	InvMedTree<FMM_Mat_t> smooth = InvMedTree<FMM_Mat_t>(sin_fn,1.0,kernel,bndry,comm);
 
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
@@ -368,6 +364,7 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	U(x,Ux);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> y(g);
+	El::Zeros(y,M/2,1);
 	tree2elemental(&smooth,y);
 
 	elemental2tree(y,&temp);
@@ -383,9 +380,6 @@ int UfuncUtfunc_test(MPI_Comm &comm){
 	Ut(y,Uty);
 
 	El::Complex<double> xUty = El::Dot(x,Uty);
-	El::Display(x);
-	El::Display(Uty);
-
 
 	std::string name = __func__;
 	test_less(1e-6,(fabs(Uxy[0] - El::RealPart(xUty))),name,comm);
@@ -442,8 +436,6 @@ int Gfunc_test(MPI_Comm &comm){
 	vec2elemental(detector_samples,y);
 
 	El::Complex<double> alpha = El::Complex<double>(-1.0);
-	El::Display(y,"y");
-	El::Display(Gx,"Gx");
 
 	El::Axpy(alpha,y,Gx);
 	double norm_diff = El::TwoNorm(Gx)/El::TwoNorm(y);

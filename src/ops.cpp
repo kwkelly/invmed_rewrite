@@ -12,11 +12,11 @@
 typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-G_op::G_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double>* kernel,pvfmm::BoundaryType bndry, MPI_Comm comm)
+Volume_FMM_op::Volume_FMM_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double>* kernel,pvfmm::BoundaryType bndry, MPI_Comm comm)
 	: det_coord(detector_coord), comm(comm), bndry(bndry){
 	int rank;
 	MPI_Comm_rank(comm,&rank);
-	if(!rank) std::cout << "constructing ..." << std::endl; 
+
 	// first we make sure that we create the mask tree
 	this->mask = new InvMedTree<FMM_Mat_t>(masking_fn,1.0,kernel,bndry,comm);
 	mask->CreateTree(false);
@@ -24,21 +24,20 @@ G_op::G_op(std::vector<double> detector_coord, void (*masking_fn)(const  double*
 	this->temp = new InvMedTree<FMM_Mat_t>(zero_fn,1.0,kernel,bndry,comm);
 	temp->CreateTree(false);
 
-	if(!rank) std::cout << "FMMSetup ..." << std::endl; 
 	temp->FMMSetup();
 }
 
-G_op::~G_op(){
+Volume_FMM_op::~Volume_FMM_op(){
 	delete mask;
 	delete temp;
 }
 
-void G_op::operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y){
-
-	// This function simply computes the convolution of G with an input U
-	// and then gets only the output at the detector locations
+void Volume_FMM_op::operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y){
 	int rank;
 	MPI_Comm_rank(comm,&rank);
+	// This function simply computes the convolution of G with an input U
+	// and then gets only the output at the detector locations
+	if(!rank) std::cout << "VolumeFMM" << std::endl; 
 
 	elemental2tree(x,temp);
 	temp->Multiply(mask,1);
@@ -52,11 +51,10 @@ void G_op::operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> 
 	return;
 }
 
-Gt_op::Gt_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double>* kernel, MPI_Comm comm)
+Particle_FMM_op::Particle_FMM_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double>* kernel, MPI_Comm comm)
 	: detector_coord(detector_coord), comm(comm){
 	int rank;
 	MPI_Comm_rank(comm,&rank);
-	if(!rank) std::cout << "constructing ..." << std::endl; 
 	// first we make sure that we create the mask tree
 	this->mask = new InvMedTree<FMM_Mat_t>(masking_fn,1.0,kernel,bndry,comm);
 	mask->CreateTree(false);
@@ -85,29 +83,24 @@ Gt_op::Gt_op(std::vector<double> detector_coord, void (*masking_fn)(const  doubl
 
 }
 
-Gt_op::~Gt_op(){
+Particle_FMM_op::~Particle_FMM_op(){
 	delete mask;
 	delete temp;
 	delete pt_tree;
 	delete matrices;
 }
 
-void Gt_op::operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x){
+void Particle_FMM_op::operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x){
 
 	int rank;
 	MPI_Comm_rank(comm,&rank);
 
-	if(!rank) std::cout << "G* function " << std::endl; 
-
-	//int n = y.Height();
-	//std::vector<double> detector_values(detector_value_size);
+	if(!rank) std::cout << "ParticleFMM" << std::endl; 
 
 	elemental2vec(y,detector_values);
-
 	pt_tree->ClearFMMData();
 	std::vector<double> trg_value;
 	pvfmm::PtFMM_Evaluate(pt_tree, trg_value, local_cheb_points, &detector_values);
-
 	// Insert the values back in
 	temp->Trg2Tree(trg_value);
 	temp->Write2File("../results/gt",6);

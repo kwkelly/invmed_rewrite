@@ -7,10 +7,10 @@
 typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-class G_op{
+class Volume_FMM_op{
   public:
-		G_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double> *kernel, pvfmm::BoundaryType bndry = pvfmm::FreeSpace, MPI_Comm comm = MPI_COMM_WORLD);
-		~G_op();
+		Volume_FMM_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double> *kernel, pvfmm::BoundaryType bndry = pvfmm::FreeSpace, MPI_Comm comm = MPI_COMM_WORLD);
+		~Volume_FMM_op();
 		void operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &x, El::DistMatrix<El::Complex<double>,El::VC, El::STAR> &y);
 	private:
 		pvfmm::BoundaryType bndry;
@@ -20,10 +20,10 @@ class G_op{
 		MPI_Comm comm;
 };
 
-class Gt_op{
+class Particle_FMM_op{
   public:
-		Gt_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double> *kernel, MPI_Comm comm = MPI_COMM_WORLD);
-		~Gt_op();
+		Particle_FMM_op(std::vector<double> detector_coord, void (*masking_fn)(const  double* coord, int n, double* out), const pvfmm::Kernel<double> *kernel, MPI_Comm comm = MPI_COMM_WORLD);
+		~Particle_FMM_op();
 		void operator()(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &y, El::DistMatrix<El::Complex<double>,El::VC, El::STAR> &x);
 	private:
 		pvfmm::BoundaryType bndry;

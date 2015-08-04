@@ -968,9 +968,11 @@ int grsvd_test(MPI_Comm &comm){
 		El::Zeros(i,N_d,1);
 
 		G(r,i);
+		elemental2tree(i,&temp);
+		temp.Add(w,-1.0);
 
-		El::Axpy(-1.0,i,g1);
-		double ndiff = El::TwoNorm(g1)/El::TwoNorm(i);
+		//El::Axpy(-1.0,i,g1);
+		double ndiff = temp.Norm2()/w.Norm2();
 		if(!rank) std::cout << "||Gw - USV*w|/||Gw|||=" << ndiff << std::endl;
 
 		/*
@@ -991,7 +993,7 @@ int grsvd_test(MPI_Comm &comm){
 		temp.Write2File((SAVE_DIR_STR+"proj_diff").c_str(),VTK_ORDER);
 
 		El::Axpy(-1.0,r,VVt_Gw);
-		double coeff_relnorm = El::FrobeniusNorm(VVt_Gw)/El::FrobeniusNorm(r);
+		double coeff_relnorm = El::TwoNorm(VVt_Gw)/El::TwoNorm(r);
 		if(!rank) std::cout << "coefficients ||w - VV*w||/||w||=" << coeff_relnorm << std::endl;
 
 		double ls_error = temp.Norm2()/w.Norm2();
@@ -1073,19 +1075,19 @@ int grsvd_test(MPI_Comm &comm){
 		 * ||Gw||/||w||
 		 */
 
-		double sig_1 = El::RealPart(S_G.Get(0,0));
-		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw(g);
-		El::Zeros(Gw,R_d,1);
-		G(r,Gw);
-
-		double g_w_norm = El::TwoNorm(Gw);
-		double w_norm = w.Norm2();
-		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
+	//	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw(g);
+//		El::Zeros(Gw,R_d,1);
+//		G(r,Gw);
+//
+//		double g_w_norm = El::TwoNorm(Gw);
+//		double w_norm = w.Norm2();
+//		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
 
 		/*
 		 * s_1*||V*w||
 		 */
 
+		double sig_1 = El::RealPart(S_G.Get(0,0));
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vtw(g);
 		El::Zeros(Vtw,R_d,1);
 		El::Gemm(El::ADJOINT,El::NORMAL,alpha,V_G,r,beta,Vtw);

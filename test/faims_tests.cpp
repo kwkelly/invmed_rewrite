@@ -1140,7 +1140,7 @@ int grsvd_test(MPI_Comm &comm){
 
 		double g_w_norm2 = El::TwoNorm(Gw2);
 		double Vt_Gw_norm = El::TwoNorm(Vt_Gw2);
-		if(!rank) std::cout << "||G_eta|| <= s_1*||V'eta||=" << (g_w_norm2 <= sig_1*Vt_Gw_norm) << std::endl;
+		if(!rank) std::cout << "||Gw|| <= s_1*||V*w||=" << (g_w_norm2 <= sig_1*Vt_Gw_norm) << std::endl;
 	}
 
 	return 0;

@@ -800,38 +800,6 @@ int grsvd_test(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
-	//FMM_Mat_t *fmm_mat=new FMM_Mat_t;
-	//fmm_mat->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel);
-	//temp.SetupFMM(fmm_mat);
-
-	//FMM_Mat_t *fmm_mat_c=new FMM_Mat_t;
-	//fmm_mat_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order,InvMedTree<FMM_Mat_t>::cheb_deg,comm,kernel_conj);
-	//temp_c.SetupFMM(fmm_mat_c);
-
-	//std::vector<double> ds = temp_c.ReadVals(d_locs);
-	//std::vector<double> trg_coord = temp.ChebPoints();
-	//pvfmm::PtFMM_Tree* Gt_tree=pvfmm::PtFMM_CreateTree(d_locs, ds, trg_coord, comm );
-	//pvfmm::PtFMM* matrices_c = new pvfmm::PtFMM;
-	//matrices_c->Initialize(InvMedTree<FMM_Mat_t>::mult_order, comm, kernel_conj);
-	///pvfmm::PtFMM_Tree* Gt_tree = temp_c->CreatePtFMMTree(d_locs, ds, kernel_conj);
-	//Gt_tree->SetupFMM(matrices_c);
-
-
-
-	// set up for using fmm instead of direct evaluation
-	//std::vector<double> src_vals = temp.ReadVals(pt_srcs);
-	//int trg_coord_size = trg_coord.size();
-
-	//pvfmm::PtFMM_Tree* pt_tree=pvfmm::PtFMM_CreateTree(pt_srcs, src_vals, trg_coord, comm );
-	// Load matrices.
-	//pvfmm::PtFMM* matrices = new pvfmm::PtFMM;
-	//matrices->Initialize(InvMedTree<FMM_Mat_t>::mult_order, comm, kernel);
-
-	// FMM Setup
-	//pt_tree->SetupFMM(matrices);
-	// end the fmm switch stuff
-
-
 	// Tree sizes
 	int m = temp.m;
 	int M = temp.M;
@@ -842,31 +810,6 @@ int grsvd_test(MPI_Comm &comm){
 	// Set the scalars for multiplying in Gemm
 	auto alpha = El::Complex<double>(1.0);
 	auto beta = El::Complex<double>(0.0);
-
-	//G_data g_data;
-	//g_data.temp = &temp;
-	//g_data.mask= &mask;
-	//g_data.src_coord = d_locs;
-	//g_data.pt_tree = Gt_tree;
-	//g_data.comm = comm;
-
-	//U_data u_data;
-	//u_data.temp = &temp;
-	//u_data.temp_c = &temp_c;
-	//u_data.mask = &mask;
-	//u_data.src_coord = pt_srcs;
-	//u_data.bndry = bndry;
-	//u_data.kernel=kernel;
-	////u_data.fn = phi_0_fn;
-	////u_data.coeffs=&coeffs;
-	//u_data.comm=comm;
-	//// for the fmm switch
-	//u_data.n_local_pt_srcs=lN_s;
-	//u_data.pt_tree=pt_tree;
-	//u_data.trg_coord_size=trg_coord_size/3;
-
-	//eta.Write2File((SAVE_DIR_STR+"eta"+params).c_str(),VTK_ORDER);
-
 
 	// Set grid
 	El::Grid g(comm);
@@ -886,14 +829,10 @@ int grsvd_test(MPI_Comm &comm){
 
 	Particle_FMM_op U = Particle_FMM_op(pt_srcs, mask_fn, kernel, comm);
 	Volume_FMM_op Ut = Volume_FMM_op(pt_srcs, mask_fn, kernel_conj, bndry, comm);
-	//using namespace std::placeholders;
-	//auto U_sf  = std::bind(U_func2,_1,_2,&u_data);
-	//auto Ut_sf = std::bind(Ut_func,_1,_2,&u_data);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> U_U(g);
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR>	S_U(g);
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_U(g);
-
 
 	rsvd::RSVDCtrl ctrl_U;
 	ctrl_U.m=N_disc;

@@ -53,35 +53,13 @@ include_directories("include")
 include_directories("extern/rsvd/include")
 
 
-add_executable(invmed src/invmed.cpp)
-add_executable(G_func_test test/G_func_test.cpp)
-add_executable(Gt_func_test test/Gt_func_test.cpp)
-#add_executable(test test/test.cpp)
-add_executable(faims test/faims.cpp)
-add_executable(dist_test test/dist_test.cpp)
-add_executable(faims_tests test/faims_tests.cpp)
-#add_executable(empty_test src/empty_test.cpp)
-add_library(point_distribs src/point_distribs.cpp)
-add_library(ops src/ops.cpp)
-#add_library(helm_kernels src/helm_kernels.cpp)
-add_library(funcs src/funcs.cpp)
-add_library(operators src/operators.cpp)
-add_library(convert_elemental src/convert_elemental.cpp)
-#add_library(convert_petsc src/convert_petsc.cpp)
-
+add_executable(faims_tests test/faims_tests.cpp src/point_distribs.cpp src/ops.cpp src/funcs.cpp src/operators.cpp src/convert_elemental.cpp)
 
 message(STATUS ${pvfmm_INCLUDE_DIRS})
 message(STATUS ${MPI_CXX_LIBRARIES})
 
-set(LIBS ${LIBS} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_LIBRARIES} point_distribs funcs convert_elemental operators ops)
+set(LIBS ${LIBS} ${pvfmm_LIBRARY} ${Elemental_LIBRARIES} ${MPI_CXX_LIBRARIES})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS}")
 
-#target_link_libraries(invmed ${LIBS})
-#target_link_libraries(test ${LIBS})
-#target_link_libraries(dist_test ${LIBS})
-#target_link_libraries(faims ${LIBS})
 target_link_libraries(faims_tests ${LIBS})
-target_link_libraries(G_func_test ${LIBS})
-target_link_libraries(Gt_func_test ${LIBS})
-#target_link_libraries(empty_test ${LIBS})

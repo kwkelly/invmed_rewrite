@@ -52,9 +52,10 @@ int el_test(MPI_Comm &comm){
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
 	int M = temp.M;
-
+	if(!rank) std::cout << "M: " << M << std::endl;
 	//El::Grid g(comm, size);
 	El::Grid g(comm);
+	//std::vector<double> vec(sz);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> A(g);
 	El::Zeros(A,M/2,1); // dividing by data_dof
@@ -66,7 +67,6 @@ int el_test(MPI_Comm &comm){
 	El::Zeros(D,M/2,1); // dividing by data_dof
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> E(g);
 	El::Zeros(E,M/2,1); // dividing by data_dof
-
 	tree2elemental(&temp,A);
 	//El::Display(A,"A");
 	elemental2tree(A,&temp1);
@@ -97,7 +97,6 @@ int el_test(MPI_Comm &comm){
 
 	return 0;
 }
-
 int el_test2(MPI_Comm &comm){
 
 	int size;
@@ -969,7 +968,7 @@ int grsvd_test(MPI_Comm &comm){
 
 		G(r,i);
 		elemental2tree(i,&temp);
-		temp.Add(w,-1.0);
+		temp.Add(&w,-1.0);
 
 		//El::Axpy(-1.0,i,g1);
 		double ndiff = temp.Norm2()/w.Norm2();
@@ -1260,6 +1259,7 @@ int save_mat_test(MPI_Comm &comm){
 
 	return 0;
 }
+
 ////////////////////////////////////////////////////////////////////
 // MAIN
 ////////////////////////////////////////////////////////////////////

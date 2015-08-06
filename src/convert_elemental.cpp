@@ -5,6 +5,39 @@
 #include "par_scan/gen_scan.hpp"
 #include "convert_elemental.hpp"
 
+
+template<typename T>
+std::ostream &operator<<(std::ostream &stream, const std::vector<T> &ob)
+{
+	for(int i=0;i<ob.size();i++){
+	  stream << ob[i] << '\n';
+	}
+	return stream;
+}
+
+template
+std::ostream &operator<<(std::ostream &stream, const std::vector<int> &ob);
+
+template
+std::ostream &operator<<(std::ostream &stream, const std::vector<double> &ob);
+
+template
+std::ostream &operator<<(std::ostream &stream, const std::vector<El::Complex<double>> &ob);
+
+
+std::vector<int> exscan(const std::vector<int> &x){
+	int ll = x.size();
+	std::vector<int> y(ll);
+	y[0] = 0;
+
+	for(int i=1;i<ll;i++){
+		y[i] = y[i-1] + x[i-1];
+	}
+	
+	return y;
+}
+
+
 typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 
 /*
@@ -17,6 +50,7 @@ typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
  * communication required.
  */
 
+/*
 template <class FMM_Mat_t, typename T>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR> &Y){
 
@@ -86,7 +120,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
 	MPI_Barrier(*comm);
 	return 0;
 }
-
+*/
 
 /*
  * Convert an Elemental vector to a pvfmm tree. The opposite of the previous function
@@ -98,6 +132,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
  * communication required.
  */
 
+/*
 template <class FMM_Mat_t, typename T>
 int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
@@ -162,6 +197,7 @@ int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Ma
 	MPI_Barrier(*comm);
 	return 0;
 }
+*/
 
 
 /*
@@ -420,17 +456,7 @@ int comp_alltoall_sizes(const std::vector<int> &input_sizes, const std::vector<i
 typedef pvfmm::FMM_Node<pvfmm::Cheb_Node<double> > FMMNode_t;
 typedef pvfmm::FMM_Cheb<FMMNode_t> FMM_Mat_t;
 
-template
-int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &Y);
 
-template
-int elemental2tree(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree);
-
-
-// the functions that I borrowed from sameer that are currently nonfunctional
-/*
-#undef __FUNCT__
-#define __FUNCT__ "elemental2tree"
 template <class FMM_Mat_t, typename T>
 int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree){
 	
@@ -439,14 +465,13 @@ int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Ma
 	int data_dof=2;
 	int SCAL_EXP = 1;
 
-	int nlocal, nstart; // petsc vec info
-	double *pt_array,*pt_perm_array;
+	//double *pt_array,*pt_perm_array;
 	int r,q,ll,rq; // el vec info
 	int nbigs; //Number of large recv (i.e. recv 1 extra data point)
 	int pstart; // p_id of nstart
-	int p = El::mpi::WorldRank(); //p_id
+	int rank = El::mpi::WorldRank(); //p_id
 	int recv_size; // base recv size
-	bool print = p == -1; 
+	bool print = (rank == -1); 
 
 	// Get el vec info
 	ll = Y.Height();
@@ -463,7 +488,9 @@ int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Ma
 	
 	// Get petsc vec params
 	//VecGetLocalSize(pt_vec,&nlocal);
-	nlocal = (tree->m)/data_dof;
+	int nlocal = (tree->m)/data_dof;
+	if(print) std::cout << "m: " << std::endl;
+	int nstart = 0;
 	//VecGetArray(pt_vec,&pt_array);
 	//VecGetOwnershipRange(pt_vec,&nstart,NULL);
 	MPI_Exscan(&nlocal,&nstart,1,MPI_INT,MPI_SUM,comm);
@@ -536,10 +563,10 @@ int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Ma
 			pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
 			double s=std::pow(2.0,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
 
-			size_t Y_offset=i*n_coeff3;
+			size_t offset=i*n_coeff3;
 			for(size_t j=0;j<n_coeff3;j++){
-				double real = El::RealPart(recv_data_ordered[j+Y_offset])*s;
-				double imag = El::ImagPart(recv_data_ordered[j+Y_offset])*s;
+				double real = El::RealPart(recv_data_ordered[j+offset])*s;
+				double imag = El::ImagPart(recv_data_ordered[j+offset])*s;
 				coeff_vec[j]=real;
 				coeff_vec[j+n_coeff3]=imag;
 			}
@@ -553,25 +580,21 @@ int elemental2tree(const El::DistMatrix<T,El::VC,El::STAR> &Y, InvMedTree<FMM_Ma
 
 }
 
-*/
 
-/*
-#undef __FUNCT__
-#define __FUNCT__ "tree2elemental"
 template <class FMM_Mat_t, typename T>
 int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR> &Y){
 
 	int data_dof=2;
 	int SCAL_EXP = 1;
 
-	int nlocal,nstart,gsize; //local elements, start p_id, global size
+	int nlocal,gsize; //local elements, start p_id, global size
 	double *pt_array; // will hold local array
 	int r,q,rq; //Grid sizes
 	int nbigs; //Number of large sends (i.e. send 1 extra data point)
 	int pstart; // p_id of nstart
-	int p = El::mpi::WorldRank(); //p_id
+	int rank = El::mpi::WorldRank(); //p_id
 	int send_size; // base send size
-	bool print = p == -1; 
+	bool print = rank == -1; 
 
 
 	// Get Grid and associated params
@@ -592,6 +615,7 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
 	nlocal = tree->m/data_dof;
 	//VecGetLocalSize(pt_vec,&nlocal);
 	//VecGetArray(pt_vec,&pt_array);
+	int nstart = 0;
 	MPI_Exscan(&nlocal,&nstart,1,MPI_INT,MPI_SUM,comm);
 	//VecGetOwnershipRange(pt_vec,&nstart,NULL);
 
@@ -630,15 +654,15 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
 			pvfmm::Vector<double>& coeff_vec=nlist[i]->ChebData();
 			double s=std::pow(0.5,COORD_DIM*nlist[i]->Depth()*0.5*SCAL_EXP);
 
-			size_t Y_offset=(i)*n_coeff3;
+			size_t offset=i*n_coeff3;
 			for(size_t j=0;j<n_coeff3;j++){
 				double real = coeff_vec[j]*s; // local indices as in the pvfmm trees
 				double imag = coeff_vec[j+n_coeff3]*s;
-				El::Complex<double> val;
-				El::SetRealPart(val,real);
-				El::SetImagPart(val,imag);
+				El::Complex<double> coeff;
+				El::SetRealPart(coeff,real);
+				El::SetImagPart(coeff,imag);
 
-				indata[Y_offset+j] = val;
+				indata[offset+j] = coeff;
 			}
 		}
 	}
@@ -679,4 +703,9 @@ int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<T,El::VC,El::STAR
 
 	return 0;
 }
-*/
+
+template
+int tree2elemental(InvMedTree<FMM_Mat_t> *tree, El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &Y);
+
+template
+int elemental2tree(const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> &Y, InvMedTree<FMM_Mat_t> *tree);

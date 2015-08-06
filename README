@@ -10,6 +10,7 @@ Elemental can be found at: libelemental.org
 
 To compile:
 > mkdir build; cd build, cmake ..; make faims_tests
+May need to use a toolchain with cmake to detect correct config
 
 Troubleshooting:
 Modify CMakeLists.txt as necessary. May need to add more paths to where CMake looks for libs and headers

@@ -791,6 +791,8 @@ int grsvd_test(MPI_Comm &comm){
 	// initialize the trees
 	InvMedTree<FMM_Mat_t>::SetupInvMed();
 
+	temp.FMMSetup();
+
 	// Tree sizes
 	int m = temp.m;
 	int M = temp.M;
@@ -880,7 +882,6 @@ int grsvd_test(MPI_Comm &comm){
 	/////////////////////////////////////////////////////////////////
 	if(!rank) std::cout << "Scattered Field Computation" << std::endl;
 
-	/*
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Phi(g);
 	El::Zeros(Phi,N_d,R_s);
 	for(int i=0;i<R_s;i++){
@@ -900,7 +901,6 @@ int grsvd_test(MPI_Comm &comm){
 
 		vec2elemental(detector_values,Phi_i);
 	}
-	*/
 
 	/////////////////////////////////////////////////////////////////
 	// Low rank factorization of G
@@ -909,8 +909,6 @@ int grsvd_test(MPI_Comm &comm){
 
 	Volume_FMM_op G = Volume_FMM_op(d_locs, mask_fn, kernel, bndry, comm);
 	Particle_FMM_op Gt = Particle_FMM_op(d_locs, mask_fn, kernel_conj, comm);
-	//auto G_sf  = std::bind(G_func,_1,_2,&g_data);
-	//auto Gt_sf = std::bind(Gt_func,_1,_2,&g_data);
 
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> U_G(g);
 	El::DistMatrix<El::Complex<double>,El::VC,El::STAR>	S_G(g);
@@ -1010,22 +1008,28 @@ int grsvd_test(MPI_Comm &comm){
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_1 = El::LockedView(V_G,0,0,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_2 = El::LockedView(V_G,0,1,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_3 = El::LockedView(V_G,0,2,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_4 = El::LockedView(V_G,0,3,N_disc,1);
 
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_l1 = El::LockedView(V_G,0,R_d-1,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_l2 = El::LockedView(V_G,0,R_d-2,N_disc,1);
 		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_l3 = El::LockedView(V_G,0,R_d-3,N_disc,1);
+		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> V_G_l4 = El::LockedView(V_G,0,R_d-4,N_disc,1);
 		elemental2tree(V_G_1,&temp);
 		temp.Write2File((SAVE_DIR_STR+"v1").c_str(),VTK_ORDER);
 		elemental2tree(V_G_2,&temp);
 		temp.Write2File((SAVE_DIR_STR+"v2").c_str(),VTK_ORDER);
 		elemental2tree(V_G_3,&temp);
 		temp.Write2File((SAVE_DIR_STR+"v3").c_str(),VTK_ORDER);
+		elemental2tree(V_G_4,&temp);
+		temp.Write2File((SAVE_DIR_STR+"v4").c_str(),VTK_ORDER);
 		elemental2tree(V_G_l1,&temp);
 		temp.Write2File((SAVE_DIR_STR+"vl1").c_str(),VTK_ORDER);
 		elemental2tree(V_G_l2,&temp);
 		temp.Write2File((SAVE_DIR_STR+"vl2").c_str(),VTK_ORDER);
 		elemental2tree(V_G_l3,&temp);
 		temp.Write2File((SAVE_DIR_STR+"vl3").c_str(),VTK_ORDER);
+		elemental2tree(V_G_l4,&temp);
+		temp.Write2File((SAVE_DIR_STR+"vl4").c_str(),VTK_ORDER);
 
 
 		// test that the vectors are orhtogonal
@@ -1072,17 +1076,6 @@ int grsvd_test(MPI_Comm &comm){
 		 */
 
 		El::Display(S_G,"Sigma_G");
-		/*
-		 * ||Gw||/||w||
-		 */
-
-	//	El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw(g);
-//		El::Zeros(Gw,R_d,1);
-//		G(r,Gw);
-//
-//		double g_w_norm = El::TwoNorm(Gw);
-//		double w_norm = w.Norm2();
-//		if(!rank) std::cout << "||Gw||/||w||=" << g_w_norm/w_norm << std::endl;
 
 		/*
 		 * s_1*||V*w||
@@ -1100,12 +1093,12 @@ int grsvd_test(MPI_Comm &comm){
 		 * ||G_v1 - s_1 u_1||
 		 */
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gv1(g);
-		El::Zeros(Gv1,R_d,1);
+		El::Zeros(Gv1,N_d,1);
 		G(V_G_1,Gv1);
 
-		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> U_G_1 = El::LockedView(U_G,0,0,R_d,1);
+		const El::DistMatrix<El::Complex<double>,El::VC,El::STAR> U_G_1 = El::LockedView(U_G,0,0,N_d,1);
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> temp_vec(g);
-		El::Zeros(temp_vec,R_d,1);
+		El::Zeros(temp_vec,N_d,1);
 		El::Axpy(sig_1,U_G_1,temp_vec);
 		El::Axpy(-1.0,Gv1,temp_vec);
 		double norm_diff1 = El::TwoNorm(temp_vec);
@@ -1134,7 +1127,7 @@ int grsvd_test(MPI_Comm &comm){
 		 */
 
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Gw2(g);
-		El::Zeros(Gw2,R_d,1);
+		El::Zeros(Gw2,N_d,1);
 		G(r,Gw2);
 
 		El::DistMatrix<El::Complex<double>,El::VC,El::STAR> Vt_Gw2(g);
@@ -1145,6 +1138,11 @@ int grsvd_test(MPI_Comm &comm){
 		double Vt_Gw_norm = El::TwoNorm(Vt_Gw2);
 		if(!rank) std::cout << "||Gw|| <= s_1*||V*w||=" << (g_w_norm2 <= sig_1*Vt_Gw_norm) << std::endl;
 	}
+
+
+	/*
+	 * No we are on to B and then finally solving everything
+	 */
 
 	return 0;
 }

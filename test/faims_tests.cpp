@@ -967,11 +967,13 @@ int grsvd_test(MPI_Comm &comm){
 		El::Zeros(i,N_d,1);
 
 		G(r,i);
-		elemental2tree(i,&temp);
-		temp.Add(&w,-1.0);
+		El::Display(i,"i");
+		El::Display(g1,"g1");
+		//elemental2tree(i,&temp);
+		//temp.Add(&w,-1.0);
 
-		//El::Axpy(-1.0,i,g1);
-		double ndiff = temp.Norm2()/w.Norm2();
+		El::Axpy(-1.0,i,g1);
+		double ndiff = El::TwoNorm(g1)/El::TwoNorm(i);
 		if(!rank) std::cout << "||Gw - USV*w|/||Gw|||=" << ndiff << std::endl;
 
 		/*
